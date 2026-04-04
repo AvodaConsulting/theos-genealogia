@@ -24,6 +24,17 @@ cp .env.example .env
 npm run dev
 ```
 
+## Cloudflare Workers Builds Deployment
+
+If your Cloudflare dashboard only supports Workers (not classic Pages), use:
+
+- Build command: `npm run build`
+- Deploy command: `npm run cf:deploy`
+- Node version: `22`
+
+The project includes `wrangler.jsonc` configured to serve `dist/` as static assets with SPA fallback routing.
+Do not set a custom `CLOUDFLARE_API_TOKEN` in the project environment unless it has the correct Pages/Workers permissions.
+
 ## NotebookLM Bridge (Option 2)
 
 The app supports NotebookLM ingestion through a local bridge endpoint. This lets you keep notebook access under your own authorized command.
