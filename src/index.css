@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #151515;
+  font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.prose p {
+  margin-top: 0.7rem;
+  margin-bottom: 0.7rem;
+}
