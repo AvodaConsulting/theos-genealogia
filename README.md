@@ -34,6 +34,8 @@ If your Cloudflare dashboard only supports Workers (not classic Pages), use:
 
 The project includes `wrangler.jsonc` configured to serve `dist/` as static assets with SPA fallback routing.
 Do not set a custom `CLOUDFLARE_API_TOKEN` in the project environment unless it has the correct Pages/Workers permissions.
+The public URL should be the worker hostname for this project, typically:
+`https://theos-genealogia.<your-subdomain>.workers.dev`
 
 ## NotebookLM Bridge (Option 2)
 

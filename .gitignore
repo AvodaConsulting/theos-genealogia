@@ -18,3 +18,4 @@ coverage/
 .vercel/
 .netlify/
 .wrangler/
+wrangler.toml
