@@ -158,17 +158,17 @@ function lineColor(type: string): string {
 function confidenceLineWidth(confidence: Link['confidence'] | undefined): number {
   switch (confidence) {
     case 'high':
-      return 3.6;
+      return 5.4;
     case 'low':
-      return 1.4;
+      return 0.9;
     case 'medium':
     default:
-      return 2.3;
+      return 2.6;
   }
 }
 
 function selectedLineWidth(confidence: Link['confidence'] | undefined): number {
-  return Math.max(4.2, confidenceLineWidth(confidence) + 1.1);
+  return Math.max(4.8, confidenceLineWidth(confidence) + 1.6);
 }
 
 function truncateText(value: string, max = 44): string {
