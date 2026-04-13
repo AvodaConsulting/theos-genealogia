@@ -1,9 +1,11 @@
 import type {
+  AppLanguage,
   CounterfactualScenarioId,
   Link,
   Node,
   ResearchMethodologyProfile,
 } from '../types';
+import { generationLanguageDirective, isZhHant } from './i18n';
 
 const sharedRules = `
 You are TheosGenealogia, a doctoral-level biblical philologist.
@@ -16,6 +18,7 @@ Explicitly preserve ambiguity where scholarly consensus is unsettled.
 Strict temporal scope: Hebrew Bible through Second Temple/Maccabean/Hellenistic contexts up to the destruction of the Second Temple (70 CE).
 Do not import post-70 CE theological systems unless explicitly requested.
 Do not collapse independent traditions into synthetic unity.
+When proposing precursor influence, distinguish direct dependence, indirect diffusion, structural parallel, and uncertain resonance.
 `;
 
 function compactGraph(graph: { nodes: Node[]; links: Link[] }): string {
@@ -79,6 +82,8 @@ function methodologyContext(profile: ResearchMethodologyProfile): string {
   return `
 Methodological profile (user-selected):
 - Hermeneutic frameworks: ${profile.hermeneuticFrameworks.join(', ') || 'None selected'}
+- Trace horizon: ${profile.traceHorizon}
+- Analysis depth: ${profile.analysisDepth}
 - Canonical assumption: ${profile.canonicalAssumption}
 - Language philosophy: ${profile.languagePhilosophy}
 
@@ -86,6 +91,32 @@ Instruction:
 - Respect this profile while preserving counter-evidence and unresolved tensions.
 - If profile and data conflict, keep data-grounded claims and explicitly mark tension.
 `;
+}
+
+function horizonAndDepthContext(profile: ResearchMethodologyProfile): string {
+  const horizon = profile.traceHorizon === 'Extended-ANE'
+    ? `Extended horizon active:
+- Include pre-biblical comparative evidence when relevant (Ancient Near East, Egypt, Levantine/Canaanite corpora, Persian/Zoroastrian streams).
+- Use source="ANE" for these nodes.
+- For each ANE→OT or ANE→STP/NT bridge, include explicit evidence basis in link.description:
+  - lexical cognate/shared term,
+  - motif-cluster parallel,
+  - legal/ritual form continuity,
+  - transmission-historical plausibility.
+- Mark confidence in link.description as High/Medium/Low and avoid asserting direct borrowing when evidence is only typological.`
+    : `Core horizon active:
+- Prioritize OT→STP→NT/Hellenistic/Manuscript trajectories up to 70 CE.
+- Do not add ANE precursor nodes unless indispensable for lexical-historical clarity.`;
+
+  const depth = profile.analysisDepth === 'Comprehensive'
+    ? `Comprehensive mode:
+- Prefer thorough, evidence-weighted mapping over minimal graph size.
+- Surface competing hypotheses and unresolved alternatives explicitly.`
+    : `Standard mode:
+- Keep claims concise and high-confidence.
+- Mention alternatives only when materially relevant.`;
+
+  return `${horizon}\n\n${depth}`;
 }
 
 function counterfactualScenarioDescription(scenario: CounterfactualScenarioId): string {
@@ -99,7 +130,7 @@ function counterfactualScenarioDescription(scenario: CounterfactualScenarioId): 
 }
 
 export function phase1Prompt(query: string, profile: ResearchMethodologyProfile): string {
-  return phase1PromptWithContext(query, profile);
+  return phase1PromptWithContext(query, profile, 'en');
 }
 
 function externalCorpusSection(externalContext?: string): string {
@@ -117,31 +148,37 @@ Use this external corpus context as additional evidence only when it is consiste
 export function phase1PromptWithContext(
   query: string,
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   externalContext?: string,
 ): string {
   return `
 ${sharedRules}
 ${methodologyContext(profile)}
+${horizonAndDepthContext(profile)}
+${generationLanguageDirective(language)}
 ${externalCorpusSection(externalContext)}
 
 Phase 1: Structural Mapping
 Research query: ${query}
 
 Task:
-- Produce 12-16 nodes and 16-24 links tracing concept genealogy across OT, STP, NT, Hellenistic, and Manuscript evidence.
+- Produce 12-18 nodes and 16-28 links tracing concept genealogy across ANE, OT, STP, NT, Hellenistic, and Manuscript evidence.
 - Keep output compact: basic fields only.
-- Use source strictly as one of: OT, STP, NT, Hellenistic, Manuscript.
+- Use source strictly as one of: ANE, OT, STP, NT, Hellenistic, Manuscript.
 - Required source balance:
+  - ANE >= 1 node if trace horizon is Extended-ANE and evidence is relevant
   - OT >= 2 nodes
   - NT >= 2 nodes
   - STP >= 2 nodes
   - Include Hellenistic and Manuscript nodes when historically relevant (at least 1 each if relevant).
 - Classification examples:
+  - Enuma Elish / Atrahasis / Ugaritic Baal Cycle / Pyramid Texts => ANE
   - Mark 8:29 => NT
   - Isaiah 53 (MT/LXX) => OT
   - Josephus, Antiquities / Philo => Hellenistic
   - DSS/codices/papyri witnesses => Manuscript
 - Ensure structural coverage of:
+  0) ANE precursor/comparative pressure points when evidence warrants
   1) MT/LXX lexical roots
   2) Second Temple and Maccabean corpora (DSS, Pseudepigrapha, 1-2 Maccabees, Philo, Josephus where relevant)
   3) NT reframing
@@ -169,7 +206,7 @@ Return this JSON shape:
   "nodes": Array<{
     "id": string,
     "type": "verse" | "concept" | "context" | "rupture" | "variant",
-    "source": "OT" | "STP" | "NT" | "Hellenistic" | "Manuscript",
+    "source": "ANE" | "OT" | "STP" | "NT" | "Hellenistic" | "Manuscript",
     "label": string,
     "content": string,
     "citations": string[],
@@ -190,11 +227,14 @@ export function nodeEnrichmentPrompt(
   node: Node,
   graph: { nodes: Node[]; links: Link[] },
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   externalContext?: string,
 ): string {
   return `
 ${sharedRules}
 ${methodologyContext(profile)}
+${horizonAndDepthContext(profile)}
+${generationLanguageDirective(language)}
 ${externalCorpusSection(externalContext)}
 
 On-demand Node Enrichment
@@ -209,6 +249,7 @@ Task:
 - Map Greek NT terms to LXX/MT roots.
 - Explicitly model one-to-many and many-to-one Greek↔Hebrew mappings where relevant.
 - Add Second Temple and Hellenistic lexical-conceptual parallels where relevant.
+- Add ANE/Egypt/Levantine/Persian comparative parallels where relevant and evidentially defensible.
 - Add manuscript variants if relevant to this node.
 - Add rupture analysis if the node exhibits semantic replacement, syntactic/gender grammar shift, untranslatable loss, or historical silence.
 - Add concise conceptual topography notes when the term drifts across time/power semantics.
@@ -242,6 +283,13 @@ Return JSON shape:
       "author": string,
       "work"?: string,
       "greekTerm"?: string,
+      "notes": string
+    }>,
+    "nearEasternParallels"?: Array<{
+      "culture": string,
+      "corpus"?: string,
+      "reference"?: string,
+      "motifOrTerm": string,
       "notes": string
     }>
   },
@@ -293,11 +341,14 @@ export function linkDebatePrompt(
   link: Link,
   graph: { nodes: Node[]; links: Link[] },
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   externalContext?: string,
 ): string {
   return `
 ${sharedRules}
 ${methodologyContext(profile)}
+${horizonAndDepthContext(profile)}
+${generationLanguageDirective(language)}
 ${externalCorpusSection(externalContext)}
 
 On-demand Link Debate Enrichment
@@ -321,6 +372,7 @@ Task:
 - Add intertextuality significance metrics and p-value when inferable.
 - Keep link.type within this controlled vocabulary whenever possible:
   direct-citation | allusion | conceptual-development | translation-interpretation | inversion | parallel.
+- For backward comparative links (especially ANE→OT), add confidence language in position/critique text and avoid over-claiming direct dependence.
 
 Return JSON shape:
 {
@@ -373,11 +425,38 @@ export function summaryPrompt(
   query: string,
   graph: { nodes: Node[]; links: Link[] },
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   externalContext?: string,
 ): string {
+  const sectionHeadings = isZhHant(language)
+    ? [
+        '# 研究檔案',
+        '## 摘要',
+        '## 系譜演進路徑',
+        '## 語文學分析',
+        '## 方法論反思',
+        '## 症狀式分析',
+        '## 斷裂與不可譯診斷',
+        '## 結論',
+        '## 參考書目（僅限已驗證來源）',
+      ]
+    : [
+        '# Research Dossier',
+        '## Abstract',
+        '## Genealogical Trajectory',
+        '## Philological Analysis',
+        '## Methodological Reflection',
+        '## Symptomatic Analysis',
+        '## Rupture and Untranslatable Diagnostics',
+        '## Conclusion',
+        '## Bibliography (Verified Sources Only)',
+      ];
+
   return `
 ${sharedRules}
 ${methodologyContext(profile)}
+${horizonAndDepthContext(profile)}
+${generationLanguageDirective(language)}
 ${externalCorpusSection(externalContext)}
 
 Phase 4: Synthesis & Summary (On-demand)
@@ -391,15 +470,15 @@ ${verifiedCitationsPool(graph)}
 Task:
 - Write an 800-1200 word academic essay in Markdown.
 - The response MUST follow this structure exactly:
-  1) # Research Dossier
-  2) ## Abstract
-  3) ## Genealogical Trajectory
-  4) ## Philological Analysis
-  5) ## Methodological Reflection
-  6) ## Symptomatic Analysis
-  7) ## Rupture and Untranslatable Diagnostics
-  8) ## Conclusion
-  9) ## Bibliography (Verified Sources Only)
+  1) ${sectionHeadings[0]}
+  2) ${sectionHeadings[1]}
+  3) ${sectionHeadings[2]}
+  4) ${sectionHeadings[3]}
+  5) ${sectionHeadings[4]}
+  6) ${sectionHeadings[5]}
+  7) ${sectionHeadings[6]}
+  8) ${sectionHeadings[7]}
+  9) ${sectionHeadings[8]}
 - Use SBL citations throughout.
 - Cite ONLY references present in the provided graph context citations arrays.
 - If evidence is insufficient, explicitly state "No verified citation available" instead of inventing a reference.
@@ -419,11 +498,14 @@ export function counterfactualPrompt(
   graph: { nodes: Node[]; links: Link[] },
   scenario: CounterfactualScenarioId,
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   externalContext?: string,
 ): string {
   return `
 ${sharedRules}
 ${methodologyContext(profile)}
+${horizonAndDepthContext(profile)}
+${generationLanguageDirective(language)}
 ${externalCorpusSection(externalContext)}
 
 Phase 6: Counterfactual Lab
@@ -455,11 +537,39 @@ export function publicationPrompt(
   query: string,
   graph: { nodes: Node[]; links: Link[] },
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   externalContext?: string,
 ): string {
+  const sectionHeadings = isZhHant(language)
+    ? [
+        '# 題目',
+        '## 摘要',
+        '## 研究範圍與語料邊界（須明確標示至公元70年）',
+        '## 概念系譜重建',
+        '## 語文學檔案',
+        '## 傳統脈絡與斷裂點',
+        '## 互文性與文本批判評估',
+        '## 方法論風險與限制',
+        '## 供學界討論之結論',
+        '## 參考書目（僅限已驗證來源）',
+      ]
+    : [
+        '# Title',
+        '## Abstract',
+        '## Research Scope and Corpus Boundary (must explicitly mention boundary up to 70 CE)',
+        '## Genealogical Reconstruction',
+        '## Philological Dossiers',
+        '## Tradition Streams and Points of Discontinuity',
+        '## Intertextuality and Textual-Critical Assessment',
+        '## Methodological Risks and Limits',
+        '## Conclusion for Scholarly Discussion',
+        '## Bibliography (Verified Sources Only)',
+      ];
+
   return `
 ${sharedRules}
 ${methodologyContext(profile)}
+${generationLanguageDirective(language)}
 ${externalCorpusSection(externalContext)}
 
 Phase 9: Living Publication Draft
@@ -474,19 +584,19 @@ Verified reference tags (use only these tags inline):
 ${verifiedReferenceTags(graph)}
 
 Task:
-- Write a polished, scholar-facing publication draft (1200-1800 words) in Markdown.
+- Write a polished, scholar-facing publication draft (900-1400 words) in Markdown.
 - This is NOT a brief summary. It should read like a conference-ready or preprint-ready research dossier.
 - Required structure:
-  1) # Title
-  2) ## Abstract
-  3) ## Research Scope and Corpus Boundary (must explicitly mention boundary up to 70 CE)
-  4) ## Genealogical Reconstruction
-  5) ## Philological Dossiers
-  6) ## Tradition Streams and Points of Discontinuity
-  7) ## Intertextuality and Textual-Critical Assessment
-  8) ## Methodological Risks and Limits
-  9) ## Conclusion for Scholarly Discussion
-  10) ## Bibliography (Verified Sources Only)
+  1) ${sectionHeadings[0]}
+  2) ${sectionHeadings[1]}
+  3) ${sectionHeadings[2]}
+  4) ${sectionHeadings[3]}
+  5) ${sectionHeadings[4]}
+  6) ${sectionHeadings[5]}
+  7) ${sectionHeadings[6]}
+  8) ${sectionHeadings[7]}
+  9) ${sectionHeadings[8]}
+  10) ${sectionHeadings[9]}
 - Inline references must use ONLY [R#] tags from the verified reference tags list.
 - Do not invent or paraphrase references outside verified tags.
 - Avoid devotional language; keep analytical academic style.
@@ -495,6 +605,76 @@ Return JSON shape:
 {
   "publicationMarkdown": "markdown draft here"
 }
+`;
+}
+
+export function publicationMarkdownPrompt(
+  query: string,
+  graph: { nodes: Node[]; links: Link[] },
+  profile: ResearchMethodologyProfile,
+  language: AppLanguage,
+  externalContext?: string,
+): string {
+  const sectionHeadings = isZhHant(language)
+    ? [
+        '# 題目',
+        '## 摘要',
+        '## 研究範圍與語料邊界',
+        '## 概念系譜重建',
+        '## 語文學檔案',
+        '## 傳統脈絡與斷裂點',
+        '## 互文性與文本批判評估',
+        '## 方法論風險與限制',
+        '## 供學界討論之結論',
+        '## 參考書目（僅限已驗證來源）',
+      ]
+    : [
+        '# Title',
+        '## Abstract',
+        '## Research Scope and Corpus Boundary',
+        '## Genealogical Reconstruction',
+        '## Philological Dossiers',
+        '## Tradition Streams and Points of Discontinuity',
+        '## Intertextuality and Textual-Critical Assessment',
+        '## Methodological Risks and Limits',
+        '## Conclusion for Scholarly Discussion',
+        '## Bibliography (Verified Sources Only)',
+      ];
+
+  return `
+${sharedRules}
+${methodologyContext(profile)}
+${horizonAndDepthContext(profile)}
+${generationLanguageDirective(language)}
+${externalCorpusSection(externalContext)}
+
+Fallback publication mode (plain Markdown, no JSON envelope)
+Research query: ${query}
+Graph context:
+${compactGraph(graph)}
+
+Verified citation pool:
+${verifiedCitationsPool(graph)}
+
+Verified reference tags (use only these tags inline):
+${verifiedReferenceTags(graph)}
+
+Task:
+- Write a polished, scholar-facing publication draft (900-1300 words) in Markdown.
+- Follow this structure exactly:
+  1) ${sectionHeadings[0]}
+  2) ${sectionHeadings[1]}
+  3) ${sectionHeadings[2]}
+  4) ${sectionHeadings[3]}
+  5) ${sectionHeadings[4]}
+  6) ${sectionHeadings[5]}
+  7) ${sectionHeadings[6]}
+  8) ${sectionHeadings[7]}
+  9) ${sectionHeadings[8]}
+  10) ${sectionHeadings[9]}
+- Inline references must use ONLY [R#] tags from the verified reference tags list.
+- Do not invent references.
+- Return Markdown only. Do not wrap in JSON.
 `;
 }
 

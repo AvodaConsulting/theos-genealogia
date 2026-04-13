@@ -2,9 +2,11 @@ import * as d3 from 'd3';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LocateFixed, Maximize2, Search, ZoomIn, ZoomOut } from 'lucide-react';
 
-import type { Link, Node, SourceType } from '../types';
+import type { AppLanguage, Link, Node, SourceType } from '../types';
+import { lineTypeLabel } from '../lib/i18n';
 
 interface GraphViewProps {
+  language: AppLanguage;
   nodes: Node[];
   links: Link[];
   selectedNodeId?: string;
@@ -24,6 +26,7 @@ type SimLink = d3.SimulationLinkDatum<SimNode> &
   };
 
 const sourceColor: Record<SourceType, string> = {
+  ANE: '#7c3f2a',
   OT: '#9f5f25',
   STP: '#6a7b3f',
   NT: '#1f4f7a',
@@ -51,30 +54,6 @@ function endpointCoord(endpoint: SimEndpoint, axis: 'x' | 'y'): number {
   return 0;
 }
 
-function normalizeTypeLabel(value: string): string {
-  const normalized = value.trim().toLowerCase();
-  const map: Record<string, string> = {
-    'direct-citation': 'Direct Citation',
-    allusion: 'Allusion',
-    'conceptual-development': 'Conceptual Development',
-    'translation-interpretation': 'Translation / Interpretation',
-    inversion: 'Inversion',
-    parallel: 'Parallel / Resonance',
-    'inferred-sequence': 'Inferred Sequence',
-  };
-  if (map[normalized]) {
-    return map[normalized];
-  }
-  const fallback = value.replace(/[_-]+/g, ' ').trim();
-  if (!fallback) {
-    return 'Conceptual Development';
-  }
-  return fallback
-    .split(' ')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
-
 function isPlaceholderDescription(value: string): boolean {
   const normalized = value.trim();
   if (!normalized) {
@@ -85,36 +64,40 @@ function isPlaceholderDescription(value: string): boolean {
   );
 }
 
-function relationPhraseForType(type: string): string {
+function relationPhraseForType(type: string, language: AppLanguage): string {
+  const zh = language === 'zh-Hant';
   switch (type.trim().toLowerCase()) {
     case 'direct-citation':
-      return 'directly cites';
+      return zh ? '直接引用' : 'directly cites';
     case 'allusion':
-      return 'alludes to';
+      return zh ? '暗引' : 'alludes to';
     case 'translation-interpretation':
-      return 'translates/interprets';
+      return zh ? '翻譯／詮釋' : 'translates/interprets';
     case 'inversion':
-      return 'inverts';
+      return zh ? '反轉' : 'inverts';
     case 'parallel':
-      return 'resonates with';
+      return zh ? '平行共鳴' : 'resonates with';
     case 'inferred-sequence':
-      return 'precedes';
+      return zh ? '先於' : 'precedes';
     case 'conceptual-development':
     default:
-      return 'develops toward';
+      return zh ? '概念演進至' : 'develops toward';
   }
 }
 
-function fallbackDescription(link: SimLink): string {
+function fallbackDescription(link: SimLink, language: AppLanguage): string {
   const source = endpointId(link.source);
   const target = endpointId(link.target);
-  return `${source} ${relationPhraseForType(link.type)} ${target}.`;
+  if (language === 'zh-Hant') {
+    return `${source} 與 ${target} 之間呈現「${relationPhraseForType(link.type, language)}」關係。`;
+  }
+  return `${source} ${relationPhraseForType(link.type, language)} ${target}.`;
 }
 
-function effectiveDescription(link: SimLink): string {
+function effectiveDescription(link: SimLink, language: AppLanguage): string {
   const raw = link.description ?? '';
   if (isPlaceholderDescription(raw)) {
-    return fallbackDescription(link);
+    return fallbackDescription(link, language);
   }
   return raw;
 }
@@ -180,6 +163,7 @@ function truncateText(value: string, max = 44): string {
 }
 
 export function GraphView({
+  language,
   nodes,
   links,
   selectedNodeId,
@@ -189,6 +173,7 @@ export function GraphView({
   onNodeSelect,
   onLinkSelect,
 }: GraphViewProps) {
+  const zh = language === 'zh-Hant';
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
@@ -325,7 +310,7 @@ export function GraphView({
           .selectAll<SVGTextElement, SimLink>('text')
           .data(simLinks)
           .join('text')
-          .text((d) => normalizeTypeLabel(d.type))
+          .text((d) => lineTypeLabel(d.type, language))
           .attr('font-size', links.length > 18 ? '9px' : '10px')
           .attr('font-family', 'Georgia, serif')
           .attr('text-anchor', 'middle')
@@ -343,7 +328,7 @@ export function GraphView({
           .selectAll<SVGTextElement, SimLink>('text')
           .data(simLinks)
           .join('text')
-          .text((d) => truncateText(effectiveDescription(d)))
+          .text((d) => truncateText(effectiveDescription(d, language)))
           .attr('font-size', links.length > 18 ? '8px' : '9px')
           .attr('font-family', 'Georgia, serif')
           .attr('text-anchor', 'middle')
@@ -482,7 +467,7 @@ export function GraphView({
       simulation.stop();
       fitToGraphRef.current = null;
     };
-  }, [graphRenderSignature, showLinkDescriptions, showLinkLabels, size]);
+  }, [graphRenderSignature, language, showLinkDescriptions, showLinkLabels, size]);
 
   useEffect(() => {
     if (!svgRef.current) {
@@ -546,38 +531,38 @@ export function GraphView({
         <button
           onClick={() => zoomBy(1.2)}
           className="rounded-lg border border-slate-200 bg-white/90 p-2 text-slate-700 shadow-sm hover:bg-white"
-          aria-label="Zoom in"
-          title="Zoom in"
+          aria-label={zh ? '放大' : 'Zoom in'}
+          title={zh ? '放大' : 'Zoom in'}
         >
           <ZoomIn className="h-4 w-4" />
         </button>
         <button
           onClick={() => zoomBy(1 / 1.2)}
           className="rounded-lg border border-slate-200 bg-white/90 p-2 text-slate-700 shadow-sm hover:bg-white"
-          aria-label="Zoom out"
-          title="Zoom out"
+          aria-label={zh ? '縮小' : 'Zoom out'}
+          title={zh ? '縮小' : 'Zoom out'}
         >
           <ZoomOut className="h-4 w-4" />
         </button>
         <button
           onClick={resetCenter}
           className="rounded-lg border border-slate-200 bg-white/90 p-2 text-slate-700 shadow-sm hover:bg-white"
-          aria-label="Center"
-          title="Center"
+          aria-label={zh ? '置中' : 'Center'}
+          title={zh ? '置中' : 'Center'}
         >
           <LocateFixed className="h-4 w-4" />
         </button>
         <button
           onClick={() => fitToGraphRef.current?.()}
           className="rounded-lg border border-slate-200 bg-white/90 p-2 text-slate-700 shadow-sm hover:bg-white"
-          aria-label="Fit graph"
-          title="Fit graph"
+          aria-label={zh ? '符合視窗' : 'Fit graph'}
+          title={zh ? '符合視窗' : 'Fit graph'}
         >
           <Maximize2 className="h-4 w-4" />
         </button>
         <div className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
           <Search className="mr-1 h-3 w-3" />
-          {zoomLevel.toFixed(2)}x
+          {zh ? '縮放' : ''} {zoomLevel.toFixed(2)}x
         </div>
       </div>
     </div>

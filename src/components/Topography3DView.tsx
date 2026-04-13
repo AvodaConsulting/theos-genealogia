@@ -1,9 +1,11 @@
 import { Eye, EyeOff, Grid3X3, Link2, Orbit, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ConceptTopographyReport, Link, Node, SourceType } from '../types';
+import type { AppLanguage, ConceptTopographyReport, Link, Node, SourceType } from '../types';
+import { lineTypeLabel, sourceLabel } from '../lib/i18n';
 
 interface Topography3DViewProps {
+  language: AppLanguage;
   report: ConceptTopographyReport;
   nodes: Node[];
   links: Link[];
@@ -12,6 +14,7 @@ interface Topography3DViewProps {
 }
 
 const sourceColor: Record<SourceType, string> = {
+  ANE: '#7c3f2a',
   OT: '#9f5f25',
   STP: '#6a7b3f',
   NT: '#1f4f7a',
@@ -83,12 +86,14 @@ function rotatePoint(point: { x: number; y: number; z: number }, yaw: number, pi
 }
 
 export function Topography3DView({
+  language,
   report,
   nodes,
   links,
   selectedNodeId,
   onNodeSelect,
 }: Topography3DViewProps) {
+  const zh = language === 'zh-Hant';
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 900, height: 700 });
   const [yaw, setYaw] = useState(-0.35);
@@ -416,9 +421,7 @@ export function Topography3DView({
                 opacity={segment.highlighted ? 0.9 : 0.68}
                 style={{ userSelect: 'none', pointerEvents: 'none' }}
               >
-                {segment.type
-                  .replace(/[_-]+/g, ' ')
-                  .replace(/\b\w/g, (ch) => ch.toUpperCase())}
+                {lineTypeLabel(segment.type, language)}
               </text>
             ))
           : null}
@@ -464,21 +467,21 @@ export function Topography3DView({
         })}
 
         <text x={axisLines.x.x + 8} y={axisLines.x.y} fontSize={11} fill="#334155">
-          Time
+          {zh ? '時間' : 'Time'}
         </text>
         <text x={axisLines.y.x + 8} y={axisLines.y.y} fontSize={11} fill="#334155">
-          Semantic
+          {zh ? '語義' : 'Semantic'}
         </text>
         <text x={axisLines.z.x + 8} y={axisLines.z.y} fontSize={11} fill="#334155">
-          Power
+          {zh ? '權力' : 'Power'}
         </text>
       </svg>
 
       <div className="absolute left-3 top-3 rounded-lg border border-amber-200 bg-white/92 px-2.5 py-1.5 text-[11px] text-slate-700 shadow-sm">
-        <p>Drag rotate • Scroll zoom • Node size = drift</p>
+        <p>{zh ? '拖曳旋轉 • 滾輪縮放 • 節點大小＝漂移度' : 'Drag rotate • Scroll zoom • Node size = drift'}</p>
         <p>
-          Nodes {projected.length} • Relationships {reportLinks.length} • Years {Math.round(yearBounds.minYear)} to{' '}
-          {Math.round(yearBounds.maxYear)}
+          {zh ? '節點' : 'Nodes'} {projected.length} • {zh ? '關係' : 'Relationships'} {reportLinks.length} •{' '}
+          {zh ? '年份' : 'Years'} {Math.round(yearBounds.minYear)} {zh ? '至' : 'to'} {Math.round(yearBounds.maxYear)}
         </p>
       </div>
 
@@ -496,7 +499,7 @@ export function Topography3DView({
           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/92 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-white"
         >
           <Link2 className="h-3 w-3" />
-          {showRelationships ? 'Lines On' : 'Lines Off'}
+          {showRelationships ? (zh ? '線條開啟' : 'Lines On') : zh ? '線條關閉' : 'Lines Off'}
         </button>
         <button
           onClick={() => setShowRelationshipLabels((prev) => !prev)}
@@ -504,40 +507,41 @@ export function Topography3DView({
           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/92 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
         >
           <Link2 className="h-3 w-3" />
-          {showRelationshipLabels ? 'Line Labels On' : 'Line Labels Off'}
+          {showRelationshipLabels ? (zh ? '線標籤開啟' : 'Line Labels On') : zh ? '線標籤關閉' : 'Line Labels Off'}
         </button>
         <button
           onClick={() => setShowLabels((prev) => !prev)}
           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/92 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-white"
         >
           {showLabels ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-          {showLabels ? 'Hide Labels' : 'Show Labels'}
+          {showLabels ? (zh ? '隱藏標籤' : 'Hide Labels') : zh ? '顯示標籤' : 'Show Labels'}
         </button>
         <button
           onClick={() => setShowGrid((prev) => !prev)}
           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/92 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-white"
         >
           <Grid3X3 className="h-3 w-3" />
-          {showGrid ? 'Grid On' : 'Grid Off'}
+          {showGrid ? (zh ? '網格開啟' : 'Grid On') : zh ? '網格關閉' : 'Grid Off'}
         </button>
         <button
           onClick={() => setAutoRotate((prev) => !prev)}
           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/92 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-white"
         >
           <Orbit className="h-3 w-3" />
-          {autoRotate ? 'Auto Rotate On' : 'Auto Rotate Off'}
+          {autoRotate ? (zh ? '自動旋轉開啟' : 'Auto Rotate On') : zh ? '自動旋轉關閉' : 'Auto Rotate Off'}
         </button>
         <button
           onClick={resetView}
           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/92 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-white"
         >
           <RefreshCw className="h-3 w-3" />
-          Reset
+          {zh ? '重設' : 'Reset'}
         </button>
       </div>
 
       <div className="absolute right-3 bottom-3 rounded-lg border border-slate-200 bg-white/90 px-2 py-1 text-[11px] text-slate-700 shadow-sm">
-        Zoom {zoom.toFixed(2)}x • Semantic 0-1 • Power 0-1 {isDragging ? '• rotating' : ''}
+        {zh ? '縮放' : 'Zoom'} {zoom.toFixed(2)}x • {zh ? '語義' : 'Semantic'} 0-1 • {zh ? '權力' : 'Power'} 0-1{' '}
+        {isDragging ? (zh ? '• 旋轉中' : '• rotating') : ''}
       </div>
 
       <div className="absolute left-3 bottom-3 rounded-lg border border-slate-200 bg-white/92 px-2.5 py-1.5 text-[11px] text-slate-700 shadow-sm">
@@ -545,7 +549,7 @@ export function Topography3DView({
           {(Object.keys(sourceColor) as SourceType[]).map((source) => (
             <span key={`legend-${source}`} className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: sourceColor[source] }} />
-              {source}
+              {sourceLabel(source, language)}
             </span>
           ))}
         </div>
@@ -564,7 +568,8 @@ export function Topography3DView({
             {hoveredPoint.label.length > 56 ? `${hoveredPoint.label.slice(0, 53)}...` : hoveredPoint.label}
           </p>
           <p>
-            Source: {hoveredPoint.source} • Drift: {hoveredPoint.drift.toFixed(2)}
+            {zh ? '來源' : 'Source'}: {sourceLabel(hoveredPoint.source, language)} • {zh ? '漂移' : 'Drift'}:{' '}
+            {hoveredPoint.drift.toFixed(2)}
           </p>
         </div>
       ) : null}
@@ -572,7 +577,9 @@ export function Topography3DView({
       {projected.length === 0 ? (
         <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/65">
           <p className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs text-slate-600">
-            Topography points will appear after concept-topography analysis is generated.
+            {zh
+              ? '概念地形分析完成後，節點將顯示於此。'
+              : 'Topography points will appear after concept-topography analysis is generated.'}
           </p>
         </div>
       ) : null}

@@ -108,15 +108,20 @@ This creates a symlink at `$CODEX_HOME/skills/notebooklm-mcp-bridge` (or `~/.cod
 
 The app now uses lazy generation to reduce context/window pressure and avoid long monolithic responses.
 It also includes:
+- extended backward trace horizon support (`ANE` source stream) for evidentially grounded Ancient Near Eastern/Egyptian/Levantine/Persian comparative precursors
 - methodology tagging on links (hermeneutics/canon/language philosophy)
 - rupture diagnostics on nodes (semantic/syntactic/untranslatable/silence)
 - inferred edge fallback to avoid disconnected "floating-only" graphs
 - configurable methodology profile in the left panel (used by all generation phases)
+- configurable trace controls in Methodology Profile:
+  - `Trace Horizon`: `Core-70CE` or `Extended-ANE`
+  - `Analysis Depth`: `Standard` or `Comprehensive`
 - Counterfactual Lab tab for on-demand what-if simulations
 - Level 3 module: Intertextuality Statistics Engine with permutation p-value testing on selected links
 - Citation integrity guardrail: every node citation is audited (rule-engine + Crossref). Unverified citations are rejected and excluded from final display.
 - Level 5.2 foundation: Living Publication generator with citation-index-to-graph navigation.
 - Living Publication now uses a dedicated publication-grade generation pipeline (not summary reuse), with system-locked verified bibliography.
+- Living Publication robustness: if long JSON publication payloads fail parsing, the pipeline auto-retries in plain-Markdown fallback mode.
 - Level 6 peer-review workflow: blind review packet generation, mapped reviewer comments (publication/node/link), and revision diff tracking against packet baseline.
 
 ## LLM Provider

@@ -13,6 +13,7 @@ import { type ComponentPropsWithoutRef, useEffect, useMemo, useState } from 'rea
 import ReactMarkdown from 'react-markdown';
 
 import type {
+  AppLanguage,
   ConceptTopographyReport,
   CounterfactualResult,
   CounterfactualScenarioId,
@@ -39,11 +40,14 @@ import type {
   VerificationResult,
 } from '../types';
 import { cn } from '../lib/cn';
+import { counterfactualLabel, formatUiDate, lineTypeLabel, nodeTypeLabel, sourceLabel } from '../lib/i18n';
 
 interface RightPanelProps {
+  language: AppLanguage;
   node?: Node;
   link?: Link;
   summary: string;
+  summaryLoaded: boolean;
   verification?: VerificationResult;
   detailLoading?: boolean;
   onRegenerateNodeAnalysis: () => void;
@@ -92,12 +96,6 @@ interface RightPanelProps {
   tab: 'detail' | 'summary' | 'lab';
   onTabChange: (tab: 'detail' | 'summary' | 'lab') => void;
 }
-
-const COUNTERFACTUAL_LABELS: Record<CounterfactualScenarioId, string> = {
-  'matthew-hebrew-not-lxx': 'Matthew Uses Hebrew Instead Of LXX',
-  'second-temple-not-destroyed': 'Second Temple Not Destroyed',
-  'philo-broad-circulation': 'Philo Broadly Circulates',
-};
 
 type ParallaxViewModel = {
   leftStance: string;
@@ -252,9 +250,11 @@ const markdownComponents = {
 };
 
 export function RightPanel({
+  language,
   node,
   link,
   summary,
+  summaryLoaded,
   verification,
   detailLoading = false,
   onRegenerateNodeAnalysis,
@@ -303,8 +303,9 @@ export function RightPanel({
   tab,
   onTabChange,
 }: RightPanelProps) {
+  const zh = language === 'zh-Hant';
   const [summaryView, setSummaryView] = useState<'summary' | 'publication'>('summary');
-  const [reviewerAlias, setReviewerAlias] = useState('Reviewer A');
+  const [reviewerAlias, setReviewerAlias] = useState(zh ? '評閱者A' : 'Reviewer A');
   const [reviewTargetType, setReviewTargetType] = useState<PeerReviewComment['targetType']>('publication');
   const [reviewTargetId, setReviewTargetId] = useState('publication');
   const [reviewSeverity, setReviewSeverity] = useState<PeerReviewComment['severity']>('moderate');
@@ -313,10 +314,7 @@ export function RightPanel({
   const [stanceRationaleDrafts, setStanceRationaleDrafts] = useState<Record<string, string>>({});
   const parallaxModel = useMemo(() => (link ? getParallaxModel(link) : null), [link]);
   const stanceMap = useMemo(() => new Map(userStances.map((entry) => [entry.id, entry])), [userStances]);
-  const summaryReady = useMemo(
-    () => summary.trim().length > 0 && !/^Open Summary to generate/i.test(summary.trim()),
-    [summary],
-  );
+  const summaryReady = useMemo(() => summaryLoaded && summary.trim().length > 0, [summary, summaryLoaded]);
   const readyForPresentation =
     Boolean(publication) &&
     publicationSyncStatus.status !== 'stale' &&
@@ -401,7 +399,7 @@ export function RightPanel({
     <aside className="w-full border-t border-amber-200/80 bg-parchment/95 p-4 xl:h-screen xl:w-[620px] xl:border-l xl:border-t-0 2xl:w-[700px]">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-olive">
-          Scholarly Output
+          {zh ? '學術輸出' : 'Scholarly Output'}
           {detailLoading || summaryLoading || counterfactualLoading ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : null}
@@ -415,7 +413,7 @@ export function RightPanel({
             )}
           >
             <span className="inline-flex items-center gap-1.5">
-              <LibraryBig className="h-3.5 w-3.5" /> Detail
+              <LibraryBig className="h-3.5 w-3.5" /> {zh ? '詳情' : 'Detail'}
             </span>
           </button>
           <button
@@ -426,7 +424,7 @@ export function RightPanel({
             )}
           >
             <span className="inline-flex items-center gap-1.5">
-              <ScrollText className="h-3.5 w-3.5" /> Summary
+              <ScrollText className="h-3.5 w-3.5" /> {zh ? '摘要' : 'Summary'}
             </span>
           </button>
           <button
@@ -437,7 +435,7 @@ export function RightPanel({
             )}
           >
             <span className="inline-flex items-center gap-1.5">
-              <FlaskConical className="h-3.5 w-3.5" /> Lab
+              <FlaskConical className="h-3.5 w-3.5" /> {zh ? '實驗室' : 'Lab'}
             </span>
           </button>
         </div>
@@ -448,7 +446,7 @@ export function RightPanel({
           {detailLoading ? (
             <p className="inline-flex items-center gap-2 text-sm text-slate-500">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Generating detailed node/link analysis...
+              {zh ? '正在生成節點／連線詳析…' : 'Generating detailed node/link analysis...'}
             </p>
           ) : null}
           {node ? (
@@ -461,23 +459,24 @@ export function RightPanel({
                   className="inline-flex items-center gap-1 rounded border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <RefreshCw className={cn('h-3 w-3', detailLoading ? 'animate-spin' : '')} />
-                  Refresh Node Analysis
+                  {zh ? '重新生成節點分析' : 'Refresh Node Analysis'}
                 </button>
               </div>
               <p className="text-sm leading-relaxed text-slate-700">{node.content}</p>
               <p className="text-xs uppercase tracking-wider text-slate-500">
-                {node.source} • {node.type}
+                {sourceLabel(node.source, language)} • {nodeTypeLabel(node.type, language)}
               </p>
               {node.tradition ? (
                 <p className="text-xs text-slate-600">
-                  <span className="font-semibold text-slate-800">Tradition:</span> {node.tradition.label}
+                  <span className="font-semibold text-slate-800">{zh ? '傳統：' : 'Tradition:'}</span>{' '}
+                  {node.tradition.label}
                   {node.tradition.independence ? ` (${node.tradition.independence})` : ''}
                 </p>
               ) : null}
 
               <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50/50 p-3">
                 <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-                  Linguistic Analysis
+                  {zh ? '語文學分析' : 'Linguistic Analysis'}
                 </h4>
                 <KeyValue label="Greek" value={node.linguisticAnalysis?.greekTerm} />
                 <KeyValue label="Hebrew" value={node.linguisticAnalysis?.hebrewTerm} />
@@ -499,10 +498,13 @@ export function RightPanel({
                   node.linguisticAnalysis?.untranslatable ||
                   node.linguisticAnalysis?.greekToHebrewMappings?.length ||
                   node.linguisticAnalysis?.secondTempleParallels?.length ||
-                  node.linguisticAnalysis?.hellenisticParallels?.length
+                  node.linguisticAnalysis?.hellenisticParallels?.length ||
+                  node.linguisticAnalysis?.nearEasternParallels?.length
                 ) ? (
                   <p className="text-xs text-slate-500">
-                    No linguistic analysis generated yet. Click Refresh Node Analysis to retry.
+                    {zh
+                      ? '尚未生成語文學分析。請點擊「重新生成節點分析」再試。'
+                      : 'No linguistic analysis generated yet. Click Refresh Node Analysis to retry.'}
                   </p>
                 ) : null}
               </div>
@@ -571,9 +573,32 @@ export function RightPanel({
                 </div>
               ) : null}
 
+              {node.linguisticAnalysis?.nearEasternParallels?.length ? (
+                <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50/50 p-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-olive">
+                    Ancient Near Eastern Parallels
+                  </h4>
+                  {node.linguisticAnalysis.nearEasternParallels.map((parallel) => (
+                    <div
+                      key={`${node.id}-${parallel.culture}-${parallel.reference ?? parallel.motifOrTerm}`}
+                    >
+                      <p className="text-sm font-semibold text-slate-900">
+                        {parallel.culture}
+                        {parallel.corpus ? `, ${parallel.corpus}` : ''}
+                        {parallel.reference ? ` (${parallel.reference})` : ''}
+                      </p>
+                      <p className="text-sm text-slate-700">
+                        Motif/Term: {parallel.motifOrTerm}
+                      </p>
+                      <p className="text-sm text-slate-700">{parallel.notes}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
               <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50/50 p-3">
                 <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-                  Symptomatic Analysis
+                  {zh ? '症狀式分析' : 'Symptomatic Analysis'}
                 </h4>
                 <KeyValue label="Surplus" value={node.symptomaticAnalysis?.surplus} />
                 <KeyValue label="Silence" value={node.symptomaticAnalysis?.silence} />
@@ -586,7 +611,9 @@ export function RightPanel({
                   node.symptomaticAnalysis?.fantasy
                 ) ? (
                   <p className="text-xs text-slate-500">
-                    No symptomatic analysis generated yet. Click Refresh Node Analysis to retry.
+                    {zh
+                      ? '尚未生成症狀式分析。請點擊「重新生成節點分析」再試。'
+                      : 'No symptomatic analysis generated yet. Click Refresh Node Analysis to retry.'}
                   </p>
                 ) : null}
               </div>
@@ -594,7 +621,7 @@ export function RightPanel({
               {node.manuscriptVariants?.length ? (
                 <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50/50 p-3">
                   <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-                    Manuscript Variants
+                    {zh ? '手稿異文' : 'Manuscript Variants'}
                   </h4>
                   {node.manuscriptVariants.map((variant) => (
                     <div key={`${node.id}-${variant.manuscript}-${variant.reading}`}>
@@ -634,7 +661,9 @@ export function RightPanel({
                   </>
                 ) : (
                   <p className="text-xs text-slate-500">
-                    No manuscript-variant probability cloud available for this node yet.
+                    {zh
+                      ? '此節點尚未生成手稿變異機率雲。'
+                      : 'No manuscript-variant probability cloud available for this node yet.'}
                   </p>
                 )}
               </div>
@@ -697,7 +726,7 @@ export function RightPanel({
 
               <div>
                 <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-                  Citations
+                  {zh ? '引文' : 'Citations'}
                 </h4>
                 {node.citations.length > 0 ? (
                   <ul className="list-inside list-disc text-sm text-slate-700">
@@ -706,13 +735,15 @@ export function RightPanel({
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-slate-500">No verified citations available for this node.</p>
+                  <p className="text-sm text-slate-500">
+                    {zh ? '此節點暫無已驗證引文。' : 'No verified citations available for this node.'}
+                  </p>
                 )}
 
                 {node.citationAudit?.rejected?.length ? (
                   <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2">
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-red-700">
-                      Rejected Citations ({node.citationAudit.rejected.length})
+                      {zh ? '已剔除引文' : 'Rejected Citations'} ({node.citationAudit.rejected.length})
                     </p>
                     <ul className="mt-1 list-inside list-disc text-xs text-red-700">
                       {node.citationAudit.rejected.map((entry) => (
@@ -731,7 +762,9 @@ export function RightPanel({
             <div className="space-y-3">
               <h3 className="text-lg font-semibold text-ink">{link.label}</h3>
               <p className="text-sm text-slate-700">{link.description}</p>
-              <p className="text-xs uppercase tracking-wider text-slate-500">{link.type}</p>
+              <p className="text-xs uppercase tracking-wider text-slate-500">
+                {lineTypeLabel(link.type, language)}
+              </p>
 
               <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3">
                 <button
@@ -748,7 +781,9 @@ export function RightPanel({
                     {intertextualityReport.compositeScore.toFixed(3)}
                   </p>
                 ) : (
-                  <p className="mt-2 text-xs text-slate-500">No statistical report generated yet for this link.</p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {zh ? '此連線尚未生成統計報告。' : 'No statistical report generated yet for this link.'}
+                  </p>
                 )}
               </div>
 
@@ -763,8 +798,8 @@ export function RightPanel({
                         {debate.scholar} ({debate.year})
                       </p>
                       <p className="text-sm text-slate-700">{debate.position}</p>
-                      <p className="text-sm text-slate-700">Framework: {debate.framework}</p>
-                      <p className="text-sm text-slate-700">Critique: {debate.critique}</p>
+                      <p className="text-sm text-slate-700">{zh ? '框架：' : 'Framework: '} {debate.framework}</p>
+                      <p className="text-sm text-slate-700">{zh ? '批評：' : 'Critique: '} {debate.critique}</p>
                       <div className="mt-1 grid grid-cols-1 gap-1 md:grid-cols-[140px_1fr_auto]">
                         <select
                           value={
@@ -777,10 +812,10 @@ export function RightPanel({
                           }
                           className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-slate-700"
                         >
-                          <option value="support">Support</option>
-                          <option value="qualified">Qualified</option>
-                          <option value="oppose">Oppose</option>
-                          <option value="undecided">Undecided</option>
+                          <option value="support">{zh ? '支持' : 'Support'}</option>
+                          <option value="qualified">{zh ? '保留支持' : 'Qualified'}</option>
+                          <option value="oppose">{zh ? '反對' : 'Oppose'}</option>
+                          <option value="undecided">{zh ? '未定' : 'Undecided'}</option>
                         </select>
                         <input
                           value={
@@ -800,26 +835,28 @@ export function RightPanel({
                             }))
                           }
                           className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-slate-700"
-                          placeholder="Your rationale..."
+                          placeholder={zh ? '你的理由…' : 'Your rationale...'}
                         />
                         <button
                           onClick={() => saveStanceRationale(debate)}
                           className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-amber-50"
                         >
-                          Save
+                          {zh ? '儲存' : 'Save'}
                         </button>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">No scholarly debate loaded for this connection yet.</p>
+                <p className="text-sm text-slate-500">
+                  {zh ? '此連線尚未載入學術辯論資料。' : 'No scholarly debate loaded for this connection yet.'}
+                </p>
               )}
 
               {link.methodologyTagging ? (
                 <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50/50 p-3">
                   <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-                    Methodology Tagging
+                    {zh ? '方法論標記' : 'Methodology Tagging'}
                   </h4>
                   {link.methodologyTagging.hermeneuticFrameworks?.length ? (
                     <div className="flex flex-wrap gap-1.5">
@@ -836,9 +873,9 @@ export function RightPanel({
                       <table className="w-full text-left text-xs">
                         <thead className="bg-amber-50 text-slate-700">
                           <tr>
-                            <th className="px-2 py-1.5 font-semibold">Stance</th>
-                            <th className="px-2 py-1.5 font-semibold">Reading</th>
-                            <th className="px-2 py-1.5 font-semibold">Key Question</th>
+                            <th className="px-2 py-1.5 font-semibold">{zh ? '立場' : 'Stance'}</th>
+                            <th className="px-2 py-1.5 font-semibold">{zh ? '讀法' : 'Reading'}</th>
+                            <th className="px-2 py-1.5 font-semibold">{zh ? '核心問題' : 'Key Question'}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -881,7 +918,7 @@ export function RightPanel({
                       )
                     ) : (
                       <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">
-                        Pending
+                        {zh ? '待生成' : 'Pending'}
                       </span>
                     )}
                     <button
@@ -890,7 +927,7 @@ export function RightPanel({
                       className="inline-flex items-center gap-1 rounded border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <RefreshCw className={cn('h-3 w-3', detailLoading ? 'animate-spin' : '')} />
-                      {parallaxModel ? 'Refresh' : 'Generate'}
+                      {parallaxModel ? (zh ? '重新生成' : 'Refresh') : zh ? '生成' : 'Generate'}
                     </button>
                   </div>
                 </div>
@@ -966,7 +1003,9 @@ export function RightPanel({
                   </>
                 ) : (
                   <p className="text-xs text-slate-500">
-                    Parallax data will appear after link enrichment returns at least two stance readings.
+                    {zh
+                      ? '當連線深化分析回傳至少兩種立場讀法後，視差資料將顯示於此。'
+                      : 'Parallax data will appear after link enrichment returns at least two stance readings.'}
                   </p>
                 )}
               </div>
@@ -1037,20 +1076,29 @@ export function RightPanel({
           ) : null}
 
           {!node && !link ? (
-            <p className="text-sm text-slate-500">Select a node or link from the graph to inspect details.</p>
+            <p className="text-sm text-slate-500">
+              {zh ? '請先在圖譜中選擇節點或連線以查看詳情。' : 'Select a node or link from the graph to inspect details.'}
+            </p>
           ) : null}
         </div>
       ) : tab === 'summary' ? (
         <div className="h-[48vh] overflow-y-auto rounded-2xl border border-amber-200 bg-white/80 p-4 xl:h-[calc(100vh-110px)]">
           <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-              Guided Workflow
+              {zh ? '引導式流程' : 'Guided Workflow'}
             </p>
             <div className="space-y-1.5 text-xs">
               <div className="flex items-center justify-between rounded-md border border-amber-100 bg-white p-2">
                 <p className="text-slate-700">
-                  {graphNodeCount > 0 && graphLinkCount > 0 ? 'Done' : 'Pending'}: Build structural graph
-                  ({graphNodeCount} nodes, {graphLinkCount} links)
+                  {graphNodeCount > 0 && graphLinkCount > 0
+                    ? zh
+                      ? '完成'
+                      : 'Done'
+                    : zh
+                      ? '待處理'
+                      : 'Pending'}
+                  : {zh ? '建立結構圖譜' : 'Build structural graph'} ({graphNodeCount}{' '}
+                  {zh ? '節點' : 'nodes'}, {graphLinkCount} {zh ? '連線' : 'links'})
                 </p>
                 {graphNodeCount > 0 && graphLinkCount > 0 ? (
                   <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
@@ -1061,54 +1109,69 @@ export function RightPanel({
 
               <div className="flex items-center justify-between rounded-md border border-amber-100 bg-white p-2">
                 <p className="text-slate-700">
-                  {(enrichedNodeCount > 0 || enrichedLinkCount > 0) ? 'Done' : 'Pending'}: Enrich nodes/links
-                  ({enrichedNodeCount} nodes, {enrichedLinkCount} links)
+                  {enrichedNodeCount > 0 || enrichedLinkCount > 0
+                    ? zh
+                      ? '完成'
+                      : 'Done'
+                    : zh
+                      ? '待處理'
+                      : 'Pending'}
+                  : {zh ? '深化節點／連線分析' : 'Enrich nodes/links'} ({enrichedNodeCount}{' '}
+                  {zh ? '節點' : 'nodes'}, {enrichedLinkCount} {zh ? '連線' : 'links'})
                 </p>
                 <button
                   onClick={() => onTabChange('detail')}
                   className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
                 >
-                  Open Detail
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between rounded-md border border-amber-100 bg-white p-2">
-                <p className="text-slate-700">{summaryReady ? 'Done' : 'Pending'}: Generate summary draft</p>
-                <button
-                  onClick={() => setSummaryView('summary')}
-                  className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
-                >
-                  Open Summary
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between rounded-md border border-amber-100 bg-white p-2">
-                <p className="text-slate-700">{publication ? 'Done' : 'Pending'}: Generate living publication</p>
-                <button
-                  onClick={onGeneratePublication}
-                  disabled={publicationLoading}
-                  className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {publicationLoading ? 'Generating...' : 'Generate'}
+                  {zh ? '開啟詳情' : 'Open Detail'}
                 </button>
               </div>
 
               <div className="flex items-center justify-between rounded-md border border-amber-100 bg-white p-2">
                 <p className="text-slate-700">
-                  {peerReviewPacket ? 'Done' : 'Pending'}: Generate blind review packet
+                  {summaryReady ? (zh ? '完成' : 'Done') : zh ? '待處理' : 'Pending'}:{' '}
+                  {zh ? '生成摘要草稿' : 'Generate summary draft'}
+                </p>
+                <button
+                  onClick={() => setSummaryView('summary')}
+                  className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
+                >
+                  {zh ? '開啟摘要' : 'Open Summary'}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border border-amber-100 bg-white p-2">
+                <p className="text-slate-700">
+                  {publication ? (zh ? '完成' : 'Done') : zh ? '待處理' : 'Pending'}:{' '}
+                  {zh ? '生成動態出版稿' : 'Generate living publication'}
+                </p>
+                <button
+                  onClick={onGeneratePublication}
+                  disabled={publicationLoading}
+                  className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {publicationLoading ? (zh ? '生成中...' : 'Generating...') : zh ? '生成' : 'Generate'}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border border-amber-100 bg-white p-2">
+                <p className="text-slate-700">
+                  {peerReviewPacket ? (zh ? '完成' : 'Done') : zh ? '待處理' : 'Pending'}:{' '}
+                  {zh ? '生成匿名審查封包' : 'Generate blind review packet'}
                 </p>
                 <button
                   onClick={onGenerateBlindReviewPacket}
                   disabled={peerReviewLoading || !publication}
                   className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {peerReviewLoading ? 'Generating...' : 'Generate'}
+                  {peerReviewLoading ? (zh ? '生成中...' : 'Generating...') : zh ? '生成' : 'Generate'}
                 </button>
               </div>
 
               <div className="flex items-center justify-between rounded-md border border-amber-100 bg-white p-2">
                 <p className="text-slate-700">
-                  {readyForPresentation ? 'Ready' : 'Pending'}: Presentation gate
+                  {readyForPresentation ? (zh ? '已就緒' : 'Ready') : zh ? '待處理' : 'Pending'}:{' '}
+                  {zh ? '展示閘門' : 'Presentation gate'}
                 </p>
                 <span
                   className={cn(
@@ -1116,7 +1179,7 @@ export function RightPanel({
                     readyForPresentation ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800',
                   )}
                 >
-                  {readyForPresentation ? 'Ready' : 'Needs Work'}
+                  {readyForPresentation ? (zh ? '可展示' : 'Ready') : zh ? '仍需修訂' : 'Needs Work'}
                 </span>
               </div>
             </div>
@@ -1130,7 +1193,7 @@ export function RightPanel({
                 summaryView === 'summary' ? 'bg-deepSea text-white' : 'text-slate-700',
               )}
             >
-              Summary Draft
+              {zh ? '摘要草稿' : 'Summary Draft'}
             </button>
             <button
               onClick={() => setSummaryView('publication')}
@@ -1139,21 +1202,21 @@ export function RightPanel({
                 summaryView === 'publication' ? 'bg-deepSea text-white' : 'text-slate-700',
               )}
             >
-              Living Publication
+              {zh ? '動態出版' : 'Living Publication'}
             </button>
           </div>
 
           {summaryLoading ? (
             <p className="mb-3 inline-flex items-center gap-2 text-sm text-slate-500">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Generating summary...
+              {zh ? '正在生成摘要…' : 'Generating summary...'}
             </p>
           ) : null}
           {summaryView === 'summary' ? (
             <>
               <div className="max-w-none">
                 <ReactMarkdown components={markdownComponents}>
-                  {summary || 'Open Summary to generate the synthesis essay.'}
+                  {summary || (zh ? '開啟摘要以生成綜合分析文章。' : 'Open Summary to generate the synthesis essay.')}
                 </ReactMarkdown>
               </div>
 
@@ -1172,7 +1235,8 @@ export function RightPanel({
                     ) : (
                       <AlertCircle className="h-4 w-4 text-amber-700" />
                     )}
-                    Verification: {verification.status}
+                    {zh ? '驗證結果：' : 'Verification: '}
+                    {verification.status}
                   </div>
                   {verification.notes?.length ? (
                     <ul className="list-inside list-disc text-sm text-slate-700">
@@ -1188,7 +1252,7 @@ export function RightPanel({
             <div className="mt-1 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
               <div className="mb-2 flex items-center justify-between">
                 <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-                  Living Publication
+                  {zh ? '動態出版' : 'Living Publication'}
                 </h4>
                 <button
                   onClick={onGeneratePublication}
@@ -1196,14 +1260,14 @@ export function RightPanel({
                   className="inline-flex items-center gap-1.5 rounded-lg bg-deepSea px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-[#18304f] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <ScrollText className="h-3.5 w-3.5" />
-                  {publicationLoading ? 'Generating...' : 'Generate'}
+                  {publicationLoading ? (zh ? '生成中...' : 'Generating...') : zh ? '生成' : 'Generate'}
                 </button>
               </div>
 
               {publication ? (
                 <div className="space-y-3">
                   <p className="text-xs text-slate-600">
-                    {publication.versionLabel} • {new Date(publication.generatedAt).toLocaleString()}
+                    {publication.versionLabel} • {formatUiDate(publication.generatedAt, language)}
                   </p>
                   <p className="text-sm font-semibold text-slate-900">{publication.title}</p>
 
@@ -1213,13 +1277,13 @@ export function RightPanel({
                       className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-amber-50"
                     >
                       <Download className="h-3.5 w-3.5" />
-                      Export .md
+                      {zh ? '匯出 .md' : 'Export .md'}
                     </button>
                   </div>
 
                   <div className="rounded-lg border border-amber-100 bg-white p-2">
                     <p className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                      Publication Draft
+                      {zh ? '出版草稿' : 'Publication Draft'}
                     </p>
                     <div className="max-h-[40vh] overflow-y-auto rounded-md border border-amber-100 bg-amber-50/30 p-2">
                       <ReactMarkdown components={markdownComponents}>
@@ -1230,7 +1294,7 @@ export function RightPanel({
 
                   <div className="rounded-lg border border-amber-100 bg-white p-2">
                     <p className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                      Citation Index
+                      {zh ? '引文索引' : 'Citation Index'}
                     </p>
                     {publication.citationIndex.length > 0 ? (
                       <ul className="space-y-1 text-xs text-slate-700">
@@ -1244,7 +1308,7 @@ export function RightPanel({
                                   onClick={() => onOpenPublicationNode(nodeId)}
                                   className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] text-slate-700 hover:bg-amber-100"
                                 >
-                                  Open {nodeId}
+                                  {zh ? '開啟' : 'Open'} {nodeId}
                                 </button>
                               ))}
                             </div>
@@ -1252,7 +1316,9 @@ export function RightPanel({
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-xs text-slate-500">No citation index generated.</p>
+                      <p className="text-xs text-slate-500">
+                        {zh ? '尚未生成引文索引。' : 'No citation index generated.'}
+                      </p>
                     )}
                   </div>
 
@@ -1267,7 +1333,7 @@ export function RightPanel({
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-xs text-slate-500">No impact notes.</p>
+                      <p className="text-xs text-slate-500">{zh ? '尚無影響註記。' : 'No impact notes.'}</p>
                     )}
                   </div>
 
@@ -1281,14 +1347,14 @@ export function RightPanel({
                         disabled={peerReviewLoading}
                         className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {peerReviewLoading ? 'Generating...' : 'Generate Blind Packet'}
+                        {peerReviewLoading ? (zh ? '生成中...' : 'Generating...') : zh ? '生成匿名封包' : 'Generate Blind Packet'}
                       </button>
                     </div>
 
                     {peerReviewPacket ? (
                       <div className="space-y-2">
                         <p className="text-xs text-slate-600">
-                          {peerReviewPacket.versionLabel} • {new Date(peerReviewPacket.createdAt).toLocaleString()}
+                          {peerReviewPacket.versionLabel} • {formatUiDate(peerReviewPacket.createdAt, language)}
                         </p>
                         <div className="max-h-44 overflow-y-auto rounded-md border border-amber-100 bg-amber-50/30 p-2">
                           <ReactMarkdown components={markdownComponents}>
@@ -1420,7 +1486,7 @@ export function RightPanel({
                                   <p>{entry.comment}</p>
                                   <div className="mt-1 flex items-center gap-2">
                                     <span className="text-[11px] text-slate-500">
-                                      {new Date(entry.createdAt).toLocaleString()}
+                                      {formatUiDate(entry.createdAt, language)}
                                     </span>
                                     <button
                                       onClick={() =>
@@ -1441,20 +1507,26 @@ export function RightPanel({
                               ))}
                             </ul>
                           ) : (
-                            <p className="text-[11px] text-slate-500">No review comments yet.</p>
+                            <p className="text-[11px] text-slate-500">
+                              {zh ? '尚無審查意見。' : 'No review comments yet.'}
+                            </p>
                           )}
                         </div>
                       </div>
                     ) : (
                       <p className="text-xs text-slate-500">
-                        Generate a blind packet to start reviewer mapping and revision tracking.
+                        {zh
+                          ? '請先生成匿名封包，以啟動審查者映射與修訂追蹤。'
+                          : 'Generate a blind packet to start reviewer mapping and revision tracking.'}
                       </p>
                     )}
                   </div>
                 </div>
               ) : (
                 <p className="text-xs text-slate-500">
-                  Generate a living publication to map bibliography entries back to graph nodes.
+                  {zh
+                    ? '請先生成動態出版稿，才能將書目條目回溯到圖譜節點。'
+                    : 'Generate a living publication to map bibliography entries back to graph nodes.'}
                 </p>
               )}
             </div>
@@ -1462,11 +1534,11 @@ export function RightPanel({
 
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
             <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-              Outline Proposal
+              {zh ? '大綱提案' : 'Outline Proposal'}
             </h4>
             <p className="text-sm font-semibold text-slate-900">{outlineProposal.title}</p>
             <p className="text-[11px] text-slate-500">
-              Generated {new Date(outlineProposal.generatedAt).toLocaleString()}
+              {zh ? '生成時間' : 'Generated'} {formatUiDate(outlineProposal.generatedAt, language)}
             </p>
 
             <div className="mt-2 space-y-2">
@@ -1492,7 +1564,9 @@ export function RightPanel({
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs text-slate-500">No structural gaps detected in current graph coverage.</p>
+                <p className="text-xs text-slate-500">
+                  {zh ? '目前圖譜覆蓋未偵測到明顯結構缺口。' : 'No structural gaps detected in current graph coverage.'}
+                </p>
               )}
             </div>
 
@@ -1512,14 +1586,16 @@ export function RightPanel({
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs text-slate-500">No verified citations available for bibliography export.</p>
+                <p className="text-xs text-slate-500">
+                  {zh ? '無可用的已驗證引文可供書目匯出。' : 'No verified citations available for bibliography export.'}
+                </p>
               )}
             </div>
           </div>
 
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
             <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-              Research Notes
+              {zh ? '研究筆記' : 'Research Notes'}
             </h4>
             <p className="text-[11px] text-slate-500">Current target: {activeNoteTarget}</p>
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-[150px_1fr]">
@@ -1551,7 +1627,7 @@ export function RightPanel({
 
             <div className="mt-2">
               <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
-                Note Log ({researchNotes.length})
+                {zh ? '筆記紀錄' : 'Note Log'} ({researchNotes.length})
               </p>
               {researchNotes.length > 0 ? (
                 <ul className="max-h-44 space-y-1.5 overflow-y-auto">
@@ -1566,30 +1642,30 @@ export function RightPanel({
                       <p>{entry.content}</p>
                       <div className="mt-1 flex items-center justify-between gap-2">
                         <span className="text-[11px] text-slate-500">
-                          {new Date(entry.createdAt).toLocaleString()}
+                          {formatUiDate(entry.createdAt, language)}
                         </span>
                         <button
                           onClick={() => onDeleteResearchNote(entry.id)}
                           className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] text-slate-700 hover:bg-amber-100"
                         >
-                          Delete
+                          {zh ? '刪除' : 'Delete'}
                         </button>
                       </div>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs text-slate-500">No research notes yet.</p>
+                <p className="text-xs text-slate-500">{zh ? '尚無研究筆記。' : 'No research notes yet.'}</p>
               )}
             </div>
           </div>
 
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
             <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-              Publication Sync
+              {zh ? '出版同步' : 'Publication Sync'}
             </h4>
             <p className="text-sm font-semibold text-slate-900">
-              Status:{' '}
+              {zh ? '狀態：' : 'Status:'}{' '}
               <span
                 className={cn(
                   'rounded px-1.5 py-0.5 text-xs',
@@ -1604,16 +1680,16 @@ export function RightPanel({
               </span>
             </p>
             <p className="text-[11px] text-slate-500">
-              Evaluated {new Date(publicationSyncStatus.evaluatedAt).toLocaleString()}
+              {zh ? '評估時間' : 'Evaluated'} {formatUiDate(publicationSyncStatus.evaluatedAt, language)}
             </p>
             <ul className="mt-2 list-inside list-disc text-xs text-slate-700">
-              <li>Changed nodes: {publicationSyncStatus.changedNodeCount}</li>
-              <li>Changed links: {publicationSyncStatus.changedLinkCount}</li>
-              <li>Changed citations: {publicationSyncStatus.changedCitationCount}</li>
+              <li>{zh ? '變更節點' : 'Changed nodes'}: {publicationSyncStatus.changedNodeCount}</li>
+              <li>{zh ? '變更連線' : 'Changed links'}: {publicationSyncStatus.changedLinkCount}</li>
+              <li>{zh ? '變更引文' : 'Changed citations'}: {publicationSyncStatus.changedCitationCount}</li>
             </ul>
             {publicationSyncStatus.impactedNodes.length > 0 ? (
               <p className="mt-1 text-xs text-slate-700">
-                Impacted nodes: {publicationSyncStatus.impactedNodes.join(', ')}
+                {zh ? '受影響節點' : 'Impacted nodes'}: {publicationSyncStatus.impactedNodes.join(', ')}
               </p>
             ) : null}
             {publicationSyncStatus.notes.length > 0 ? (
@@ -1627,10 +1703,10 @@ export function RightPanel({
 
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
             <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-              Peer Review Gate
+              {zh ? '同儕審查閘門' : 'Peer Review Gate'}
             </h4>
             <p className="text-sm font-semibold text-slate-900">
-              Readiness:{' '}
+              {zh ? '就緒度：' : 'Readiness:'}{' '}
               <span
                 className={cn(
                   'rounded px-1.5 py-0.5 text-xs',
@@ -1643,10 +1719,10 @@ export function RightPanel({
               </span>
             </p>
             <ul className="mt-2 list-inside list-disc text-xs text-slate-700">
-              <li>Open major: {peerReviewGate.openMajor}</li>
-              <li>Open moderate: {peerReviewGate.openModerate}</li>
-              <li>Open minor: {peerReviewGate.openMinor}</li>
-              <li>Open query: {peerReviewGate.openQuery}</li>
+              <li>{zh ? '重大未結案' : 'Open major'}: {peerReviewGate.openMajor}</li>
+              <li>{zh ? '中度未結案' : 'Open moderate'}: {peerReviewGate.openModerate}</li>
+              <li>{zh ? '輕度未結案' : 'Open minor'}: {peerReviewGate.openMinor}</li>
+              <li>{zh ? '詢問未結案' : 'Open query'}: {peerReviewGate.openQuery}</li>
             </ul>
             {peerReviewGate.blockers.length > 0 ? (
               <ul className="mt-1 list-inside list-disc text-xs text-red-700">
@@ -1655,19 +1731,23 @@ export function RightPanel({
                 ))}
               </ul>
             ) : (
-              <p className="mt-1 text-xs text-emerald-700">No blocking review issues remain.</p>
+              <p className="mt-1 text-xs text-emerald-700">
+                {zh ? '目前已無阻擋展示的審查問題。' : 'No blocking review issues remain.'}
+              </p>
             )}
           </div>
         </div>
       ) : (
         <div className="h-[48vh] space-y-4 overflow-y-auto rounded-2xl border border-amber-200 bg-white/80 p-4 xl:h-[calc(100vh-110px)]">
           <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
-            <h3 className="mb-2 text-sm font-semibold text-ink">Counterfactual Lab</h3>
+            <h3 className="mb-2 text-sm font-semibold text-ink">{zh ? '反事實實驗室' : 'Counterfactual Lab'}</h3>
             <p className="mb-3 text-xs text-slate-600">
-              Simulate alternative historical trajectories and inspect theological-methodological consequences.
+              {zh
+                ? '模擬替代歷史路徑，檢視其神學與方法論後果。'
+                : 'Simulate alternative historical trajectories and inspect theological-methodological consequences.'}
             </p>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-              Scenario
+              {zh ? '情境' : 'Scenario'}
             </label>
             <select
               value={counterfactualScenario}
@@ -1676,9 +1756,15 @@ export function RightPanel({
               }
               className="mb-3 w-full rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-bronze"
             >
-              {(Object.keys(COUNTERFACTUAL_LABELS) as CounterfactualScenarioId[]).map((scenario) => (
+              {(
+                [
+                  'matthew-hebrew-not-lxx',
+                  'second-temple-not-destroyed',
+                  'philo-broad-circulation',
+                ] as CounterfactualScenarioId[]
+              ).map((scenario) => (
                 <option key={scenario} value={scenario}>
-                  {COUNTERFACTUAL_LABELS[scenario]}
+                  {counterfactualLabel(scenario, language)}
                 </option>
               ))}
             </select>
@@ -1688,7 +1774,7 @@ export function RightPanel({
               className="inline-flex items-center gap-2 rounded-lg bg-deepSea px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#18304f] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <FlaskConical className="h-3.5 w-3.5" />
-              {counterfactualLoading ? 'Simulating...' : 'Run What-if'}
+              {counterfactualLoading ? (zh ? '模擬中...' : 'Simulating...') : zh ? '執行 What-if' : 'Run What-if'}
             </button>
           </div>
 
@@ -1696,14 +1782,14 @@ export function RightPanel({
             <div className="space-y-3">
               <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3">
                 <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-                  Hypothesis
+                  {zh ? '假設' : 'Hypothesis'}
                 </h4>
                 <p className="text-sm text-slate-700">{counterfactualResult.hypothesis}</p>
               </div>
 
               <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3">
                 <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-                  Projected Shifts
+                  {zh ? '推定轉變' : 'Projected Shifts'}
                 </h4>
                 {counterfactualResult.projectedShifts.length > 0 ? (
                   <ul className="list-inside list-disc text-sm text-slate-700">
@@ -1712,13 +1798,15 @@ export function RightPanel({
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-slate-500">No projected shifts returned.</p>
+                  <p className="text-sm text-slate-500">
+                    {zh ? '未回傳推定轉變。' : 'No projected shifts returned.'}
+                  </p>
                 )}
               </div>
 
               <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3">
                 <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-                  Theological Consequences
+                  {zh ? '神學後果' : 'Theological Consequences'}
                 </h4>
                 {counterfactualResult.theologicalConsequences.length > 0 ? (
                   <ul className="list-inside list-disc text-sm text-slate-700">
@@ -1727,7 +1815,9 @@ export function RightPanel({
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-slate-500">No consequences returned.</p>
+                  <p className="text-sm text-slate-500">
+                    {zh ? '未回傳後果結果。' : 'No consequences returned.'}
+                  </p>
                 )}
               </div>
 
@@ -1742,7 +1832,7 @@ export function RightPanel({
 
               <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3">
                 <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-                  Citations
+                  {zh ? '引文' : 'Citations'}
                 </h4>
                 {counterfactualResult.citations.length > 0 ? (
                   <ul className="list-inside list-disc text-sm text-slate-700">
@@ -1751,7 +1841,7 @@ export function RightPanel({
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-slate-500">No citations returned.</p>
+                  <p className="text-sm text-slate-500">{zh ? '未回傳引文。' : 'No citations returned.'}</p>
                 )}
               </div>
             </div>
@@ -1762,9 +1852,11 @@ export function RightPanel({
           )}
 
           <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
-            <h3 className="mb-2 text-sm font-semibold text-ink">Negative Scripture Index</h3>
+            <h3 className="mb-2 text-sm font-semibold text-ink">
+              {zh ? '負向經文索引' : 'Negative Scripture Index'}
+            </h3>
             <p className="text-[11px] text-slate-500">
-              Generated {new Date(negativeScriptureIndex.generatedAt).toLocaleString()}
+              {zh ? '生成時間' : 'Generated'} {formatUiDate(negativeScriptureIndex.generatedAt, language)}
             </p>
             {negativeScriptureIndex.notes.length > 0 ? (
               <ul className="mt-2 list-inside list-disc text-xs text-slate-700">
@@ -1785,12 +1877,14 @@ export function RightPanel({
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-xs text-slate-500">No negative scripture pattern detected.</p>
+              <p className="mt-2 text-xs text-slate-500">
+                {zh ? '尚未偵測到負向經文模式。' : 'No negative scripture pattern detected.'}
+              </p>
             )}
           </div>
 
           <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
-            <h3 className="mb-2 text-sm font-semibold text-ink">Concept Topography</h3>
+            <h3 className="mb-2 text-sm font-semibold text-ink">{zh ? '概念地形圖' : 'Concept Topography'}</h3>
             <p className="text-xs text-slate-700">{conceptTopographyReport.summary}</p>
             {conceptTopographyReport.entries.length > 0 ? (
               <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-amber-100 bg-white p-2">
@@ -1810,19 +1904,19 @@ export function RightPanel({
                 </ul>
               </div>
             ) : (
-              <p className="text-xs text-slate-500">No topography entries available.</p>
+              <p className="text-xs text-slate-500">{zh ? '尚無地形圖條目。' : 'No topography entries available.'}</p>
             )}
           </div>
 
           <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
-            <h3 className="mb-2 text-sm font-semibold text-ink">Scholarly Ecosystem</h3>
+            <h3 className="mb-2 text-sm font-semibold text-ink">{zh ? '學術生態系統' : 'Scholarly Ecosystem'}</h3>
             <p className="text-[11px] text-slate-500">
-              Generated {new Date(scholarlyEcosystem.generatedAt).toLocaleString()}
+              {zh ? '生成時間' : 'Generated'} {formatUiDate(scholarlyEcosystem.generatedAt, language)}
             </p>
 
             <div className="mt-2 rounded-md border border-amber-100 bg-white p-2">
               <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
-                Framework Clusters
+                {zh ? '框架群集' : 'Framework Clusters'}
               </p>
               {scholarlyEcosystem.frameworkClusters.length > 0 ? (
                 <ul className="list-inside list-disc text-xs text-slate-700">
@@ -1833,7 +1927,9 @@ export function RightPanel({
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs text-slate-500">No debate frameworks detected yet.</p>
+                <p className="text-xs text-slate-500">
+                  {zh ? '尚未偵測到辯論框架。' : 'No debate frameworks detected yet.'}
+                </p>
               )}
             </div>
 
@@ -1850,7 +1946,9 @@ export function RightPanel({
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs text-slate-500">No contested links with multiple scholars yet.</p>
+                <p className="text-xs text-slate-500">
+                  {zh ? '尚無多學者爭議的連線。' : 'No contested links with multiple scholars yet.'}
+                </p>
               )}
             </div>
 
@@ -1867,7 +1965,7 @@ export function RightPanel({
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs text-slate-500">No timeline events available.</p>
+                <p className="text-xs text-slate-500">{zh ? '尚無時間線事件。' : 'No timeline events available.'}</p>
               )}
             </div>
 
@@ -1891,7 +1989,9 @@ export function RightPanel({
                 </ul>
               ) : (
                 <p className="text-xs text-slate-500">
-                  No stance tags yet. Set support/oppose/qualified in Scholarly Debate cards.
+                  {zh
+                    ? '尚未設定立場標記。請在學術辯論卡片中標記支持／反對／保留。'
+                    : 'No stance tags yet. Set support/oppose/qualified in Scholarly Debate cards.'}
                 </p>
               )}
               {personalGenealogyReport.faultLines.length > 0 ? (

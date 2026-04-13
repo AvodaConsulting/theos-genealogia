@@ -26,6 +26,7 @@ import { buildOutlineProposal } from './lib/researchWorkflow';
 import { buildNegativeScriptureIndex, applyHeuristicRuptureDiagnosticsToGraph } from './lib/ruptureDiagnostics';
 import { buildScholarlyEcosystemReport } from './lib/scholarlyEcosystem';
 import { computeTextualFluidity } from './lib/textualFluidity';
+import { DEFAULT_LANGUAGE, defaultQuery, summaryPlaceholder } from './lib/i18n';
 import {
   clearGeminiRuntime,
   configureGeminiRuntime,
@@ -34,6 +35,7 @@ import {
 } from './lib/llmClient';
 import type {
   ActivityLogEntry,
+  AppLanguage,
   ConceptTopographyReport,
   CounterfactualResult,
   CounterfactualScenarioId,
@@ -63,11 +65,10 @@ import type {
   RevisionDiffReport,
   VerificationResult,
 } from './types';
-
-const SUMMARY_PLACEHOLDER =
-  'Open the Summary tab to generate the synthesis essay from the current graph state.';
 const DEFAULT_METHOD_PROFILE: ResearchMethodologyProfile = {
   hermeneuticFrameworks: ['Historical-Critical', 'Literary'],
+  traceHorizon: 'Extended-ANE',
+  analysisDepth: 'Comprehensive',
   canonicalAssumption: 'Expanded Canon',
   languagePhilosophy: 'Differance',
 };
@@ -174,6 +175,8 @@ function mergeLinkPatch(
 
 export default function App() {
   const initialGeminiRuntime = useMemo(() => getGeminiRuntimeSnapshot(), []);
+  const [language, setLanguage] = useState<AppLanguage>(DEFAULT_LANGUAGE);
+  const [activeOutputLanguage, setActiveOutputLanguage] = useState<AppLanguage>(DEFAULT_LANGUAGE);
   const [accessVerified, setAccessVerified] = useState(false);
   const [accessVerifying, setAccessVerifying] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
@@ -183,9 +186,7 @@ export default function App() {
   const [hasSavedLocalKey, setHasSavedLocalKey] = useState(initialGeminiRuntime.keySource === 'localStorage');
   const [providerLabel, setProviderLabel] = useState(`Gemini (${initialGeminiRuntime.model})`);
 
-  const [query, setQuery] = useState(
-    'The concept of Logos in John 1 and its genealogy from MT/LXX through STP literature.',
-  );
+  const [query, setQuery] = useState(defaultQuery(DEFAULT_LANGUAGE));
   const [activeQuery, setActiveQuery] = useState(query);
   const [mode, setMode] = useState<'graph' | 'timeline' | 'topography'>('graph');
   const [rightTab, setRightTab] = useState<'detail' | 'summary' | 'lab'>('detail');
@@ -324,6 +325,56 @@ export default function App() {
     setLogs((prev) => [...prev, makeLogEntry(phase, status, message)]);
   };
 
+  function clearGeneratedLayersForLanguage(nextLanguage: AppLanguage) {
+    setActiveOutputLanguage(nextLanguage);
+    setResult((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((node) => ({
+        ...node,
+        linguisticAnalysis: undefined,
+        symptomaticAnalysis: undefined,
+        manuscriptVariants: undefined,
+        ruptureAnalysis: undefined,
+        conceptualTopography: undefined,
+      })),
+      links: prev.links.map((link) => ({
+        ...link,
+        scholarlyDebate: undefined,
+        methodologyTagging: undefined,
+        intertextualityMetrics: undefined,
+      })),
+      summary: summaryPlaceholder(nextLanguage),
+    }));
+    setNodeLoaded({});
+    setLinkLoaded({});
+    setSummaryLoaded(false);
+    setCounterfactualByScenario({});
+    setIntertextualityReports({});
+    setPublication(undefined);
+    setPublicationBaselineResult(undefined);
+    setPeerReviewPacket(undefined);
+    setPeerReviewComments([]);
+    appendLog(
+      'phase4-synthesis-summary',
+      'running',
+      nextLanguage === 'zh-Hant'
+        ? '已切換語言，將以新語言重新生成摘要與分析內容。'
+        : 'Language switched; summary and analysis layers will regenerate in the selected language.',
+    );
+  }
+
+  function handleLanguageChange(nextLanguage: AppLanguage) {
+    const previousLanguage = language;
+    if (previousLanguage === nextLanguage) {
+      return;
+    }
+    setLanguage(nextLanguage);
+    setQuery((prev) =>
+      prev.trim() === defaultQuery(previousLanguage).trim() ? defaultQuery(nextLanguage) : prev,
+    );
+    clearGeneratedLayersForLanguage(nextLanguage);
+  }
+
   async function auditGraphNodeCitations(nodes: Node[], queryText: string): Promise<Node[]> {
     appendLog('phase8-citation-audit', 'running', `Verifying ${nodes.length} node citation sets...`);
     const auditedNodes: Node[] = [];
@@ -367,6 +418,7 @@ export default function App() {
         graph,
         nodeId,
         activeMethodology,
+        activeOutputLanguage,
         appendLog,
         notebookPromptContext,
       );
@@ -439,6 +491,7 @@ export default function App() {
         graph,
         selected,
         activeMethodology,
+        activeOutputLanguage,
         appendLog,
         notebookPromptContext,
       );
@@ -474,6 +527,7 @@ export default function App() {
         activeQuery,
         graph,
         activeMethodology,
+        activeOutputLanguage,
         appendLog,
         notebookPromptContext,
       );
@@ -506,6 +560,7 @@ export default function App() {
         graph,
         scenario,
         activeMethodology,
+        activeOutputLanguage,
         appendLog,
         notebookPromptContext,
       );
@@ -582,6 +637,7 @@ export default function App() {
         activeQuery,
         { nodes: result.nodes, links: result.links },
         activeMethodology,
+        activeOutputLanguage,
         appendLog,
         notebookPromptContext,
       );
@@ -749,11 +805,12 @@ export default function App() {
     const normalizedMethodology = normalizeMethodologyProfile(methodology);
     setMethodology(normalizedMethodology);
     setActiveMethodology(normalizedMethodology);
+    setActiveOutputLanguage(language);
     setRightTab('detail');
     setResult({
       nodes: [],
       links: [],
-      summary: SUMMARY_PLACEHOLDER,
+      summary: summaryPlaceholder(language),
     });
     setVerification(undefined);
     setSelectedNodeId(undefined);
@@ -786,6 +843,7 @@ export default function App() {
       const structural = await runStructuralPhase(
         trimmed,
         normalizedMethodology,
+        language,
         appendLog,
         traceExternalContext,
       );
@@ -794,7 +852,7 @@ export default function App() {
       setResult({
         nodes: auditedNodes,
         links: structural.links,
-        summary: SUMMARY_PLACEHOLDER,
+        summary: summaryPlaceholder(language),
       });
       setVerification(undefined);
       setSelectedNodeId(auditedNodes[0]?.id);
@@ -865,7 +923,9 @@ export default function App() {
   async function handleVerifyAccess() {
     const apiKey = gateApiKey.trim();
     if (!apiKey) {
-      setAccessError('Please provide your Gemini API key.');
+      setAccessError(
+        language === 'zh-Hant' ? '請先輸入你的 Gemini API Key。' : 'Please provide your Gemini API key.',
+      );
       return;
     }
 
@@ -885,7 +945,11 @@ export default function App() {
       setAccessVerified(true);
     } catch (verifyError) {
       const message =
-        verifyError instanceof Error ? verifyError.message : 'Failed to verify Gemini API key.';
+        verifyError instanceof Error
+          ? verifyError.message
+          : language === 'zh-Hant'
+            ? 'Gemini API Key 驗證失敗。'
+            : 'Failed to verify Gemini API key.';
       setAccessError(message);
     } finally {
       setAccessVerifying(false);
@@ -908,6 +972,8 @@ export default function App() {
   if (!accessVerified) {
     return (
       <GeminiAccessGate
+        language={language}
+        onLanguageChange={handleLanguageChange}
         apiKey={gateApiKey}
         model={gateModel}
         rememberKey={gateRememberKey}
@@ -927,6 +993,8 @@ export default function App() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#fff5dc_0%,_#f1e8d5_45%,_#e6dcc9_100%)] text-ink xl:overflow-hidden">
       <div className="flex flex-col xl:h-screen xl:flex-row">
         <LeftPanel
+          language={language}
+          onLanguageChange={handleLanguageChange}
           query={query}
           onQueryChange={setQuery}
           methodology={methodology}
@@ -945,6 +1013,7 @@ export default function App() {
         />
 
         <CenterPanel
+          language={language}
           mode={mode}
           onModeChange={setMode}
           nodes={result.nodes}
@@ -958,9 +1027,11 @@ export default function App() {
         />
 
         <RightPanel
+          language={language}
           node={selectedNode}
           link={selectedLink}
           summary={result.summary}
+          summaryLoaded={summaryLoaded}
           verification={verification}
           detailLoading={detailLoading}
           onRegenerateNodeAnalysis={handleNodeAnalysisRegenerate}

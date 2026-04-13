@@ -1,6 +1,7 @@
 import type { ConceptTopographyEntry, ConceptTopographyReport, Link, Node } from '../types';
 
 const SOURCE_POWER: Record<Node['source'], number> = {
+  ANE: 0.5,
   OT: 0.72,
   STP: 0.64,
   Hellenistic: 0.58,
@@ -66,6 +67,9 @@ function estimateYear(node: Node): number {
 
   if (node.source === 'OT') {
     return -650;
+  }
+  if (node.source === 'ANE') {
+    return -1200;
   }
   if (node.source === 'STP') {
     return -120;

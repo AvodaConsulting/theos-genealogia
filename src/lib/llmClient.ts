@@ -309,6 +309,50 @@ async function generateWithGeminiCandidate<T>(
   );
 }
 
+async function generateTextWithGeminiCandidate(
+  prompt: string,
+  apiKey: string,
+  preferredModel: string,
+): Promise<{ text: string; modelUsed: string }> {
+  if (!hasUsableKey(apiKey)) {
+    throw new Error(
+      'Gemini API key is not configured. Enter your own Gemini key in the app access gate before starting research.',
+    );
+  }
+
+  const candidates = buildGeminiModelCandidates(preferredModel);
+  let lastError: unknown = null;
+
+  for (const candidate of candidates) {
+    try {
+      const response = await getGeminiClient(apiKey).models.generateContent({
+        model: candidate,
+        contents: prompt,
+        config: {
+          temperature: 0.2,
+        },
+      });
+
+      return {
+        text: extractGeminiText(response),
+        modelUsed: candidate,
+      };
+    } catch (error) {
+      lastError = error;
+      if (isGeminiModelNotFoundError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(
+    `No compatible Gemini model was found. Tried: ${candidates.join(', ')}. Last error: ${
+      lastError instanceof Error ? lastError.message : 'unknown'
+    }`,
+  );
+}
+
 export async function verifyGeminiRuntimeCredentials(
   apiKey: string,
   preferredModel?: string,
@@ -412,6 +456,45 @@ async function generateWithOpenAi<T>(prompt: string): Promise<T> {
   return safeParseJson<T>(extractOpenAiText(body));
 }
 
+async function generateTextWithOpenAi(prompt: string): Promise<string> {
+  if (!hasUsableKey(openAiApiKey)) {
+    throw new Error(
+      'Missing OpenAI API key. Configure VITE_OPENAI_API_KEY for OpenAI mode, or use Gemini runtime key mode.',
+    );
+  }
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${openAiApiKey}`,
+    },
+    body: JSON.stringify({
+      model: openAiModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2,
+    }),
+  });
+
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message =
+      typeof body === 'object' &&
+      body !== null &&
+      'error' in body &&
+      typeof body.error === 'object' &&
+      body.error !== null &&
+      'message' in body.error &&
+      typeof body.error.message === 'string'
+        ? body.error.message
+        : `OpenAI request failed with status ${response.status}.`;
+
+    throw createHttpError(response.status, message);
+  }
+
+  return extractOpenAiText(body);
+}
+
 async function generateWithGemini<T>(prompt: string): Promise<T> {
   const runtime = resolveGeminiRuntime();
   if (!runtime.hasKey) {
@@ -426,6 +509,22 @@ async function generateWithGemini<T>(prompt: string): Promise<T> {
     window.localStorage.setItem(GEMINI_MODEL_STORAGE_KEY, modelUsed);
   }
   return parsed;
+}
+
+async function generateTextWithGemini(prompt: string): Promise<string> {
+  const runtime = resolveGeminiRuntime();
+  if (!runtime.hasKey) {
+    throw new Error(
+      'Gemini API key is required. Enter and verify your own Gemini API key before using the app.',
+    );
+  }
+
+  const { text, modelUsed } = await generateTextWithGeminiCandidate(prompt, runtime.apiKey, runtime.model);
+  runtimeGeminiModel = modelUsed;
+  if (canUseLocalStorage() && runtimeGeminiKeySource === 'localStorage') {
+    window.localStorage.setItem(GEMINI_MODEL_STORAGE_KEY, modelUsed);
+  }
+  return text;
 }
 
 function resolveProvider(): Provider {
@@ -459,6 +558,19 @@ export async function generateJson<T>(prompt: string, onRetry?: RetryCallback): 
       return provider === 'openai'
         ? generateWithOpenAi<T>(prompt)
         : generateWithGemini<T>(prompt);
+    }, onRetry);
+  } catch (error) {
+    throw normalizeProviderError(error);
+  }
+}
+
+export async function generateText(prompt: string, onRetry?: RetryCallback): Promise<string> {
+  try {
+    return await with429Retry(async () => {
+      const provider = resolveProvider();
+      return provider === 'openai'
+        ? generateTextWithOpenAi(prompt)
+        : generateTextWithGemini(prompt);
     }, onRetry);
   } catch (error) {
     throw normalizeProviderError(error);

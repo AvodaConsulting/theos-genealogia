@@ -1,4 +1,5 @@
 import type {
+  AppLanguage,
   CounterfactualResult,
   CounterfactualScenarioId,
   Link,
@@ -8,7 +9,8 @@ import type {
   ResearchResult,
   VerificationResult,
 } from '../types';
-import { generateJson, getProviderLabel } from './llmClient';
+import { generateJson, generateText, getProviderLabel } from './llmClient';
+import { isZhHant } from './i18n';
 import {
   normalizeCounterfactualPayload,
   normalizePublicationPayload,
@@ -23,6 +25,7 @@ import {
   linkDebatePrompt,
   nodeEnrichmentPrompt,
   phase1PromptWithContext,
+  publicationMarkdownPrompt,
   publicationPrompt,
   summaryPrompt,
   verificationPrompt,
@@ -55,9 +58,21 @@ function referenceTaggedBibliography(citations: string[]): string {
   return citations.map((citation, index) => `- [R${index + 1}] ${citation}`).join('\n');
 }
 
-function ensureStructuredSummary(summary: string): string {
+function ensureStructuredSummary(summary: string, language: AppLanguage): string {
   if (/^#\s+/m.test(summary) && /^##\s+/m.test(summary)) {
     return summary;
+  }
+
+  if (isZhHant(language)) {
+    return [
+      '# 研究檔案',
+      '',
+      '## 摘要',
+      summary.trim(),
+      '',
+      '## 系譜演進路徑',
+      '模型未回傳完整分節標題；以上保留原始摘要內容。',
+    ].join('\n');
   }
 
   return [
@@ -71,25 +86,50 @@ function ensureStructuredSummary(summary: string): string {
   ].join('\n');
 }
 
-function withDeterministicBibliography(summary: string, citations: string[]): string {
+function withDeterministicBibliography(
+  summary: string,
+  citations: string[],
+  language: AppLanguage,
+): string {
   const normalized = summary.trim();
-  const bibliographyHeadingPattern = /^##\s+Bibliography\b/im;
-  const systemHeading = '## Bibliography (Verified Sources Only, System-Appended)';
+  const bibliographyHeadingPattern = isZhHant(language)
+    ? /^##\s+參考書目\b/im
+    : /^##\s+Bibliography\b/im;
+  const systemHeading = isZhHant(language)
+    ? '## 參考書目（僅限已驗證來源，系統附加）'
+    : '## Bibliography (Verified Sources Only, System-Appended)';
   const entries =
     citations.length > 0
       ? citations.map((citation) => `- ${citation}`).join('\n')
-      : '- No verified citation available';
+      : isZhHant(language)
+        ? '- 無可用的已驗證引文'
+        : '- No verified citation available';
 
   if (bibliographyHeadingPattern.test(normalized)) {
     return `${normalized}\n\n${systemHeading}\n${entries}`;
   }
 
-  return `${normalized}\n\n## Bibliography (Verified Sources Only)\n${entries}`;
+  const heading = isZhHant(language)
+    ? '## 參考書目（僅限已驗證來源）'
+    : '## Bibliography (Verified Sources Only)';
+  return `${normalized}\n\n${heading}\n${entries}`;
 }
 
-function ensureStructuredPublication(markdown: string): string {
+function ensureStructuredPublication(markdown: string, language: AppLanguage): string {
   if (/^#\s+/m.test(markdown) && /^##\s+/m.test(markdown)) {
     return markdown;
+  }
+
+  if (isZhHant(language)) {
+    return [
+      '# 動態出版草稿',
+      '',
+      '## 摘要',
+      markdown.trim(),
+      '',
+      '## 概念系譜重建',
+      '模型未回傳完整分節標題；以上保留原始生成內容。',
+    ].join('\n');
   }
 
   return [
@@ -103,11 +143,38 @@ function ensureStructuredPublication(markdown: string): string {
   ].join('\n');
 }
 
-function withLockedPublicationBibliography(markdown: string, citations: string[]): string {
+function withLockedPublicationBibliography(
+  markdown: string,
+  citations: string[],
+  language: AppLanguage,
+): string {
   const normalized = markdown.trim();
-  const systemHeading = '## Bibliography (Verified Sources Only, System Locked)';
+  const systemHeading = isZhHant(language)
+    ? '## 參考書目（僅限已驗證來源，系統鎖定）'
+    : '## Bibliography (Verified Sources Only, System Locked)';
   const entries = referenceTaggedBibliography(citations);
   return `${normalized}\n\n${systemHeading}\n${entries}`;
+}
+
+function extractMarkdownText(raw: string): string {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/```(?:markdown|md)?\s*([\s\S]*?)```/i);
+  return (fenced?.[1] ?? trimmed).trim();
+}
+
+function isLikelyJsonEnvelopeFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('json') ||
+    message.includes('unexpected token') ||
+    message.includes('unterminated') ||
+    message.includes('end of json') ||
+    message.includes('parse')
+  );
 }
 
 function withLoggedFailure(error: unknown, phase: PhaseKey, log: Logger): never {
@@ -119,6 +186,7 @@ function withLoggedFailure(error: unknown, phase: PhaseKey, log: Logger): never 
 export async function runStructuralPhase(
   query: string,
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   log: Logger,
   externalContext?: string,
 ): Promise<{ nodes: Node[]; links: Link[] }> {
@@ -129,13 +197,16 @@ export async function runStructuralPhase(
       `Constructing structural graph skeleton with ${getProviderLabel()}...`,
     );
 
-    const raw = await generateJson<unknown>(phase1PromptWithContext(query, profile, externalContext), (attempt, waitMs) => {
+    const raw = await generateJson<unknown>(
+      phase1PromptWithContext(query, profile, language, externalContext),
+      (attempt, waitMs) => {
       log(
         'phase1-structural-mapping',
         'running',
         `Rate limit detected. Retry ${attempt} in ${Math.round(waitMs / 1000)}s...`,
       );
-    });
+      },
+    );
 
     const normalized = normalizeStructuralPayload(raw);
     log(
@@ -151,7 +222,7 @@ export async function runStructuralPhase(
     log(
       'phase1-structural-mapping',
       'running',
-      `Source distribution: OT=${sourceCounts.OT ?? 0}, STP=${sourceCounts.STP ?? 0}, NT=${sourceCounts.NT ?? 0}, Hellenistic=${sourceCounts.Hellenistic ?? 0}, Manuscript=${sourceCounts.Manuscript ?? 0}.`,
+      `Source distribution: ANE=${sourceCounts.ANE ?? 0}, OT=${sourceCounts.OT ?? 0}, STP=${sourceCounts.STP ?? 0}, NT=${sourceCounts.NT ?? 0}, Hellenistic=${sourceCounts.Hellenistic ?? 0}, Manuscript=${sourceCounts.Manuscript ?? 0}.`,
     );
 
     if (normalized.links.length === 0) {
@@ -180,6 +251,7 @@ export async function enrichNodeOnDemand(
   graph: { nodes: Node[]; links: Link[] },
   nodeId: string,
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   log: Logger,
   externalContext?: string,
 ): Promise<{
@@ -199,7 +271,7 @@ export async function enrichNodeOnDemand(
   try {
     log('phase2-philological-enrichment', 'running', `Enriching node ${node.label}...`);
     const raw = await generateJson<unknown>(
-      nodeEnrichmentPrompt(query, node, graph, profile, externalContext),
+      nodeEnrichmentPrompt(query, node, graph, profile, language, externalContext),
       (attempt, waitMs) => {
         log(
           'phase2-philological-enrichment',
@@ -235,6 +307,7 @@ export async function enrichLinkOnDemand(
   graph: { nodes: Node[]; links: Link[] },
   selected: Pick<Link, 'source' | 'target' | 'type'>,
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   log: Logger,
   externalContext?: string,
 ): Promise<{
@@ -252,13 +325,16 @@ export async function enrichLinkOnDemand(
 
   try {
     log('phase3-academic-rigor', 'running', `Enriching debate for ${link.label}...`);
-    const raw = await generateJson<unknown>(linkDebatePrompt(query, link, graph, profile, externalContext), (attempt, waitMs) => {
+    const raw = await generateJson<unknown>(
+      linkDebatePrompt(query, link, graph, profile, language, externalContext),
+      (attempt, waitMs) => {
       log(
         'phase3-academic-rigor',
         'running',
         `Rate limit detected. Retry ${attempt} in ${Math.round(waitMs / 1000)}s...`,
       );
-    });
+      },
+    );
 
     const patch = normalizeSingleLinkPayload(raw, selected);
     log(
@@ -277,22 +353,30 @@ export async function generateSummaryOnDemand(
   query: string,
   graph: { nodes: Node[]; links: Link[] },
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   log: Logger,
   externalContext?: string,
 ): Promise<string> {
   try {
     log('phase4-synthesis-summary', 'running', 'Generating on-demand summary...');
-    const raw = await generateJson<unknown>(summaryPrompt(query, graph, profile, externalContext), (attempt, waitMs) => {
+    const raw = await generateJson<unknown>(
+      summaryPrompt(query, graph, profile, language, externalContext),
+      (attempt, waitMs) => {
       log(
         'phase4-synthesis-summary',
         'running',
         `Rate limit detected. Retry ${attempt} in ${Math.round(waitMs / 1000)}s...`,
       );
-    });
+      },
+    );
 
     const summary = normalizeSummaryPayload(raw);
-    const structured = ensureStructuredSummary(summary);
-    const withBibliography = withDeterministicBibliography(structured, collectVerifiedCitations(graph));
+    const structured = ensureStructuredSummary(summary, language);
+    const withBibliography = withDeterministicBibliography(
+      structured,
+      collectVerifiedCitations(graph),
+      language,
+    );
     log('phase4-synthesis-summary', 'success', 'Summary generated.');
     return withBibliography;
   } catch (error) {
@@ -305,13 +389,14 @@ export async function generateCounterfactualOnDemand(
   graph: { nodes: Node[]; links: Link[] },
   scenario: CounterfactualScenarioId,
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   log: Logger,
   externalContext?: string,
 ): Promise<CounterfactualResult> {
   try {
     log('phase6-counterfactual-lab', 'running', `Running counterfactual scenario: ${scenario}...`);
     const raw = await generateJson<unknown>(
-      counterfactualPrompt(query, graph, scenario, profile, externalContext),
+      counterfactualPrompt(query, graph, scenario, profile, language, externalContext),
       (attempt, waitMs) => {
         log(
           'phase6-counterfactual-lab',
@@ -333,22 +418,56 @@ export async function generateLivingPublicationOnDemand(
   query: string,
   graph: { nodes: Node[]; links: Link[] },
   profile: ResearchMethodologyProfile,
+  language: AppLanguage,
   log: Logger,
   externalContext?: string,
 ): Promise<string> {
   try {
     log('phase9-living-publication', 'running', 'Generating publication-grade living draft...');
-    const raw = await generateJson<unknown>(publicationPrompt(query, graph, profile, externalContext), (attempt, waitMs) => {
+    let draft = '';
+
+    try {
+      const raw = await generateJson<unknown>(
+        publicationPrompt(query, graph, profile, language, externalContext),
+        (attempt, waitMs) => {
+          log(
+            'phase9-living-publication',
+            'running',
+            `Rate limit detected. Retry ${attempt} in ${Math.round(waitMs / 1000)}s...`,
+          );
+        },
+      );
+      draft = normalizePublicationPayload(raw);
+    } catch (error) {
+      if (!isLikelyJsonEnvelopeFailure(error)) {
+        throw error;
+      }
+
       log(
         'phase9-living-publication',
         'running',
-        `Rate limit detected. Retry ${attempt} in ${Math.round(waitMs / 1000)}s...`,
+        'JSON envelope failed on long publication draft. Retrying in plain-markdown fallback mode...',
       );
-    });
 
-    const draft = normalizePublicationPayload(raw);
-    const structured = ensureStructuredPublication(draft);
-    const locked = withLockedPublicationBibliography(structured, collectVerifiedCitations(graph));
+      const fallbackText = await generateText(
+        publicationMarkdownPrompt(query, graph, profile, language, externalContext),
+        (attempt, waitMs) => {
+          log(
+            'phase9-living-publication',
+            'running',
+            `Rate limit detected. Retry ${attempt} in ${Math.round(waitMs / 1000)}s...`,
+          );
+        },
+      );
+      draft = extractMarkdownText(fallbackText);
+    }
+
+    const structured = ensureStructuredPublication(draft, language);
+    const locked = withLockedPublicationBibliography(
+      structured,
+      collectVerifiedCitations(graph),
+      language,
+    );
     log('phase9-living-publication', 'success', 'Publication-grade draft generated.');
     return locked;
   } catch (error) {

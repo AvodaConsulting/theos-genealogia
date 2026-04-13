@@ -379,6 +379,16 @@ function verifyCorpusCitation(citation: string): CitationDecision | null {
     };
   }
 
+  const anePattern =
+    /\b(?:Enuma\s+Elish|Atrahasis|Epic\s+of\s+Gilgamesh|Gilgamesh|KTU\s*\d(?:\.\d+)*|CAT\s*\d(?:\.\d+)*|Ugarit(?:ic)?|Pyramid\s+Texts?|Coffin\s+Texts?|Book\s+of\s+the\s+Dead|Avesta|Yasna|Vendidad|Avestan)\b/i;
+  if (anePattern.test(normalized)) {
+    return {
+      citation,
+      verified: true,
+      reason: 'Matches Ancient Near Eastern comparative corpus citation pattern.',
+    };
+  }
+
   return null;
 }
 

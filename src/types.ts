@@ -1,9 +1,12 @@
-export type SourceType = 'OT' | 'STP' | 'NT' | 'Hellenistic' | 'Manuscript';
+export type SourceType = 'ANE' | 'OT' | 'STP' | 'NT' | 'Hellenistic' | 'Manuscript';
 export type NodeType = 'verse' | 'concept' | 'context' | 'rupture' | 'variant';
+export type AppLanguage = 'en' | 'zh-Hant';
 export type HermeneuticFramework =
   | 'Historical-Critical'
   | 'Literary'
   | 'Reader-Response';
+export type TraceHorizon = 'Core-70CE' | 'Extended-ANE';
+export type AnalysisDepth = 'Standard' | 'Comprehensive';
 export type CanonicalAssumption =
   | 'Traditional'
   | 'Expanded Canon'
@@ -17,6 +20,8 @@ export type CounterfactualScenarioId =
 
 export interface ResearchMethodologyProfile {
   hermeneuticFrameworks: HermeneuticFramework[];
+  traceHorizon: TraceHorizon;
+  analysisDepth: AnalysisDepth;
   canonicalAssumption: CanonicalAssumption;
   languagePhilosophy: LanguagePhilosophy;
 }
@@ -311,6 +316,13 @@ export interface Node {
       author: string;
       work?: string;
       greekTerm?: string;
+      notes: string;
+    }>;
+    nearEasternParallels?: Array<{
+      culture: string;
+      corpus?: string;
+      reference?: string;
+      motifOrTerm: string;
       notes: string;
     }>;
   };

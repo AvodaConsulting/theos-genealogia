@@ -10,9 +10,11 @@ import {
   YAxis,
 } from 'recharts';
 
-import type { Node } from '../types';
+import type { AppLanguage, Node } from '../types';
+import { sourceLabel } from '../lib/i18n';
 
 interface TimelineViewProps {
+  language: AppLanguage;
   nodes: Node[];
   selectedNodeId?: string;
   onNodeSelect: (node: Node) => void;
@@ -33,6 +35,7 @@ interface TimelinePoint {
 }
 
 const SOURCE_COLORS: Record<Node['source'], string> = {
+  ANE: '#7c3f2a',
   OT: '#9f5f25',
   STP: '#6a7b3f',
   NT: '#1f4f7a',
@@ -46,17 +49,11 @@ const SOURCE_LANES: Record<Node['source'], number> = {
   Hellenistic: 3,
   STP: 4,
   OT: 5,
-};
-
-const LANE_LABELS: Record<number, string> = {
-  1: 'Manuscript',
-  2: 'NT',
-  3: 'Hellenistic',
-  4: 'STP',
-  5: 'OT',
+  ANE: 6,
 };
 
 const SOURCE_FALLBACK_YEAR: Record<Node['source'], number> = {
+  ANE: -1200,
   OT: -700,
   STP: -150,
   NT: 60,
@@ -236,6 +233,13 @@ function inferYearFromCitation(citation: string): { year: number; anchor: string
   if (/\b(?:DSS|[1-9]\d?Q[A-Za-z0-9-]+)\b/i.test(normalized)) {
     return { year: -100, anchor: `Inferred from citation: ${normalized}` };
   }
+  if (
+    /\b(?:Enuma Elish|Atrahasis|Gilgamesh|KTU|CAT\s+\d|Ugarit|Ugaritic|Pyramid Texts?|Coffin Texts?|Avesta|Yasna|Vendidad)\b/i.test(
+      normalized,
+    )
+  ) {
+    return { year: -1200, anchor: `Inferred from citation: ${normalized}` };
+  }
 
   return null;
 }
@@ -266,10 +270,28 @@ function buildYearTicks(minYear: number, maxYear: number): number[] {
   return ticks;
 }
 
-function TimelineTooltip({ active, payload }: TooltipProps<number, string>) {
+function laneLabel(value: number, language: AppLanguage): string {
+  const zh = language === 'zh-Hant';
+  const map: Record<number, string> = {
+    1: zh ? '手稿' : 'Manuscript',
+    2: zh ? '新約' : 'NT',
+    3: zh ? '希臘化' : 'Hellenistic',
+    4: zh ? '第二聖殿' : 'STP',
+    5: zh ? '舊約' : 'OT',
+    6: zh ? '古近東' : 'ANE',
+  };
+  return map[Math.round(value)] ?? '';
+}
+
+function TimelineTooltip({
+  active,
+  payload,
+  language,
+}: TooltipProps<number, string> & { language: AppLanguage }) {
   if (!active || !payload?.length) {
     return null;
   }
+  const zh = language === 'zh-Hant';
 
   const point = payload[0]?.payload as TimelinePoint;
   if (!point) {
@@ -280,16 +302,19 @@ function TimelineTooltip({ active, payload }: TooltipProps<number, string>) {
     <div className="max-w-[300px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
       <p className="font-semibold text-slate-900">{point.label}</p>
       <p className="text-slate-600">
-        {point.source} • {point.type}
+        {sourceLabel(point.source, language)} • {point.type}
       </p>
-      {point.traditionLabel ? <p className="text-slate-600">Tradition: {point.traditionLabel}</p> : null}
-      <p className="text-slate-700">Estimated date: {formatYear(point.x)}</p>
+      {point.traditionLabel ? (
+        <p className="text-slate-600">{zh ? '傳統：' : 'Tradition: '} {point.traditionLabel}</p>
+      ) : null}
+      <p className="text-slate-700">{zh ? '推定年代：' : 'Estimated date: '} {formatYear(point.x)}</p>
       <p className="text-slate-500">{point.anchor}</p>
     </div>
   );
 }
 
-export function TimelineView({ nodes, selectedNodeId, onNodeSelect }: TimelineViewProps) {
+export function TimelineView({ language, nodes, selectedNodeId, onNodeSelect }: TimelineViewProps) {
+  const zh = language === 'zh-Hant';
   const laneSlotCount = new Map<string, number>();
 
   const points: TimelinePoint[] = nodes
@@ -330,7 +355,7 @@ export function TimelineView({ nodes, selectedNodeId, onNodeSelect }: TimelineVi
   const ticks = buildYearTicks(minYear, maxYear);
 
   const perSource = (source: Node['source']) => points.filter((point) => point.source === source);
-  const sourceOrder: Node['source'][] = ['OT', 'STP', 'Hellenistic', 'NT', 'Manuscript'];
+  const sourceOrder: Node['source'][] = ['ANE', 'OT', 'STP', 'Hellenistic', 'NT', 'Manuscript'];
 
   return (
     <div className="flex h-full w-full flex-col rounded-2xl border border-amber-200 bg-white/80 p-3">
@@ -341,21 +366,23 @@ export function TimelineView({ nodes, selectedNodeId, onNodeSelect }: TimelineVi
             className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] text-slate-700"
           >
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: SOURCE_COLORS[source] }} />
-            {source} ({perSource(source).length})
+            {sourceLabel(source, language)} ({perSource(source).length})
           </span>
         ))}
       </div>
       <p className="mb-2 text-[11px] text-slate-500">
-        Chronology is citation-inferred when possible; otherwise source-era defaults are used. Click a point to open
-        its dossier.
+        {zh
+          ? '年代優先依引文推定；若無引文則使用來源時代預設值。點擊節點可開啟詳細檔案。'
+          : 'Chronology is citation-inferred when possible; otherwise source-era defaults are used. Click a point to open its dossier.'}
       </p>
 
       <div className="min-h-0 flex-1 grid-cols-1 gap-2 lg:grid lg:grid-cols-[minmax(0,1fr)_240px]">
         <div className="min-h-[220px] lg:min-h-0">
           <ResponsiveContainer width="100%" height="100%">
             <ScatterChart margin={{ top: 18, right: 24, bottom: 24, left: 12 }}>
-              <ReferenceArea x1={-539} x2={70} y1={0.5} y2={5.5} fill="#fef3c7" fillOpacity={0.16} />
-              <ReferenceArea x1={-330} x2={70} y1={0.5} y2={5.5} fill="#e0f2fe" fillOpacity={0.12} />
+              <ReferenceArea x1={-1200} x2={-540} y1={0.5} y2={6.5} fill="#fee2e2" fillOpacity={0.11} />
+              <ReferenceArea x1={-539} x2={70} y1={0.5} y2={6.5} fill="#fef3c7" fillOpacity={0.16} />
+              <ReferenceArea x1={-330} x2={70} y1={0.5} y2={6.5} fill="#e0f2fe" fillOpacity={0.12} />
               <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" />
               <XAxis
                 type="number"
@@ -368,13 +395,16 @@ export function TimelineView({ nodes, selectedNodeId, onNodeSelect }: TimelineVi
               <YAxis
                 type="number"
                 dataKey="y"
-                domain={[0.5, 5.5]}
-                ticks={[1, 2, 3, 4, 5]}
-                tickFormatter={(value) => LANE_LABELS[Math.round(value)] ?? ''}
+                domain={[0.5, 6.5]}
+                ticks={[1, 2, 3, 4, 5, 6]}
+                tickFormatter={(value) => laneLabel(value, language)}
                 tick={{ fill: '#334155', fontSize: 11 }}
                 width={92}
               />
-              <Tooltip cursor={{ strokeDasharray: '3 3', stroke: '#64748b' }} content={<TimelineTooltip />} />
+              <Tooltip
+                cursor={{ strokeDasharray: '3 3', stroke: '#64748b' }}
+                content={<TimelineTooltip language={language} />}
+              />
 
               {sourceOrder.map((source) => (
                 <Scatter
@@ -394,8 +424,12 @@ export function TimelineView({ nodes, selectedNodeId, onNodeSelect }: TimelineVi
         </div>
 
         <div className="min-h-[160px] overflow-y-auto rounded-xl border border-amber-200 bg-white/70 p-2">
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">Timeline Index</p>
-          <p className="mb-2 text-[11px] text-slate-500">Use this list if points are dense in the chart.</p>
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+            {zh ? '時間線索引' : 'Timeline Index'}
+          </p>
+          <p className="mb-2 text-[11px] text-slate-500">
+            {zh ? '若圖中節點過密，可改用此清單。' : 'Use this list if points are dense in the chart.'}
+          </p>
           <ul className="space-y-1.5">
             {points.map((point) => (
               <li key={`timeline-index-${point.id}`}>
@@ -409,10 +443,13 @@ export function TimelineView({ nodes, selectedNodeId, onNodeSelect }: TimelineVi
                 >
                   <p className="font-semibold">{point.shortLabel}</p>
                   <p className="text-[11px] text-slate-500">
-                    {formatYear(point.x)} • {point.source}
+                    {formatYear(point.x)} • {sourceLabel(point.source, language)}
                   </p>
                   {point.traditionLabel ? (
-                    <p className="text-[11px] text-slate-500">Tradition: {point.traditionLabel}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {zh ? '傳統：' : 'Tradition: '}
+                      {point.traditionLabel}
+                    </p>
                   ) : null}
                 </button>
               </li>

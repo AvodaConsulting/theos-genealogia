@@ -10,6 +10,7 @@ import type {
 } from '../types';
 
 const VALID_SOURCES: ReadonlySet<SourceType> = new Set([
+  'ANE',
   'OT',
   'STP',
   'NT',
@@ -80,6 +81,25 @@ function normalizeSourceToken(value: unknown): SourceType | null {
   }
 
   if (
+    normalized === 'ane' ||
+    normalized === 'ancient near east' ||
+    normalized === 'ancient near eastern' ||
+    normalized === 'near east' ||
+    normalized === 'egypt' ||
+    normalized === 'canaanite' ||
+    normalized === 'ugaritic' ||
+    normalized === 'mesopotamian' ||
+    normalized === 'zoroastrian' ||
+    normalized.includes('ancient near east') ||
+    normalized.includes('near eastern') ||
+    normalized.includes('mesopotam') ||
+    normalized.includes('ugarit') ||
+    normalized.includes('egypt')
+  ) {
+    return 'ANE';
+  }
+
+  if (
     normalized === 'ot' ||
     normalized === 'old testament' ||
     normalized === 'hebrew bible' ||
@@ -132,6 +152,7 @@ function normalizeSourceToken(value: unknown): SourceType | null {
 
 function sourceSignalScores(text: string): Record<SourceType, number> {
   const scores: Record<SourceType, number> = {
+    ANE: 0,
     OT: 0,
     STP: 0,
     NT: 0,
@@ -159,6 +180,13 @@ function sourceSignalScores(text: string): Record<SourceType, number> {
     )
   ) {
     scores.Manuscript += 3;
+  }
+  if (
+    /\b(ancient near east|near eastern|mesopotamia|akkadian|sumerian|ugarit|ugaritic|canaanite|baal cycle|enuma elish|atrahasis|gilgamesh|pyramid texts?|coffin texts?|book of the dead|avesta|yasna|zoroastrian)\b/i.test(
+      text,
+    )
+  ) {
+    scores.ANE += 3;
   }
   if (
     /\b(josephus|antiquities|philo|stoic|platon|aristotle|greco-roman|hellenistic|homer|euripides|plutarch|epictetus|seneca)\b/i.test(
@@ -338,6 +366,42 @@ function normalizeHellenisticParallels(
   return out.length > 0 ? out : undefined;
 }
 
+function normalizeNearEasternParallels(
+  value: unknown,
+): NonNullable<Node['linguisticAnalysis']>['nearEasternParallels'] {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const out: NonNullable<Node['linguisticAnalysis']>['nearEasternParallels'] = [];
+
+  for (const item of value) {
+    const entry = asRecord(item);
+    if (!entry) {
+      continue;
+    }
+
+    const culture = asString(entry.culture);
+    const motifOrTerm = asString(entry.motifOrTerm);
+    const notes = asString(entry.notes);
+    if (!culture || !motifOrTerm || !notes) {
+      continue;
+    }
+
+    const corpus = asString(entry.corpus);
+    const reference = asString(entry.reference);
+    out.push({
+      culture,
+      corpus: corpus || undefined,
+      reference: reference || undefined,
+      motifOrTerm,
+      notes,
+    });
+  }
+
+  return out.length > 0 ? out : undefined;
+}
+
 function normalizeLinguisticAnalysis(value: unknown): Node['linguisticAnalysis'] | undefined {
   const record = asRecord(value);
   if (!record) {
@@ -355,6 +419,7 @@ function normalizeLinguisticAnalysis(value: unknown): Node['linguisticAnalysis']
     greekToHebrewMappings: normalizeGreekHebrewMappings(record.greekToHebrewMappings),
     secondTempleParallels: normalizeSecondTempleParallels(record.secondTempleParallels),
     hellenisticParallels: normalizeHellenisticParallels(record.hellenisticParallels),
+    nearEasternParallels: normalizeNearEasternParallels(record.nearEasternParallels),
   };
 
   if (Object.values(analysis).every((valueEntry) => valueEntry === undefined)) {
@@ -1100,11 +1165,12 @@ export function normalizeStructuralPayload(raw: unknown): {
 
   if (links.length === 0 && nodes.length > 1) {
     const sourceRank: Record<SourceType, number> = {
-      OT: 1,
-      STP: 2,
-      Hellenistic: 3,
-      NT: 4,
-      Manuscript: 5,
+      ANE: 1,
+      OT: 2,
+      STP: 3,
+      Hellenistic: 4,
+      NT: 5,
+      Manuscript: 6,
     };
     const sorted = [...nodes].sort((a, b) => sourceRank[a.source] - sourceRank[b.source]);
     for (let index = 1; index < sorted.length; index += 1) {
