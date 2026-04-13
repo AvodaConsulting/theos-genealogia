@@ -1,4 +1,5 @@
 import type { ConceptTopographyEntry, ConceptTopographyReport, Link, Node } from '../types';
+import { inferChronologyFromNode } from './chronology';
 
 const SOURCE_POWER: Record<Node['source'], number> = {
   ANE: 0.5,
@@ -9,78 +10,8 @@ const SOURCE_POWER: Record<Node['source'], number> = {
   Manuscript: 0.48,
 };
 
-const BOOK_YEAR: Record<string, number> = {
-  genesis: -900,
-  isaiah: -700,
-  psalms: -500,
-  daniel: -165,
-  sirach: -180,
-  wisdomofsolomon: -30,
-  '1enoch': -150,
-  matthew: 80,
-  mark: 70,
-  luke: 85,
-  john: 95,
-  romans: 57,
-  revelation: 96,
-};
-
-function normalizeSpaces(value: string): string {
-  return value.replace(/\s+/g, ' ').trim();
-}
-
 function tokenize(text: string): string[] {
   return (text.toLowerCase().match(/\p{L}[\p{L}\p{N}'-]*/gu) ?? []).filter((token) => token.length > 1);
-}
-
-function normalizeBookToken(raw: string): string | null {
-  const compact = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (!compact) {
-    return null;
-  }
-  if (compact.startsWith('wis')) {
-    return 'wisdomofsolomon';
-  }
-  if (compact.startsWith('sir') || compact === 'ecclesiasticus') {
-    return 'sirach';
-  }
-  if (compact === '1en' || compact === '1enoch') {
-    return '1enoch';
-  }
-  return compact;
-}
-
-function estimateYear(node: Node): number {
-  for (const citation of node.citations ?? []) {
-    const normalized = normalizeSpaces(citation)
-      .replace(/\b(?:LXX|MT|HB|GNT|NA28|UBS5)\b/gi, '')
-      .trim();
-    const match = normalized.match(/^([1-3]?\s*[A-Za-z. ]+)\s+\d+(?::\d+(?:-\d+)?)?$/);
-    if (!match) {
-      continue;
-    }
-    const token = normalizeBookToken(match[1] ?? '');
-    if (token && Number.isFinite(BOOK_YEAR[token])) {
-      return BOOK_YEAR[token];
-    }
-  }
-
-  if (node.source === 'OT') {
-    return -650;
-  }
-  if (node.source === 'ANE') {
-    return -1200;
-  }
-  if (node.source === 'STP') {
-    return -120;
-  }
-  if (node.source === 'Hellenistic') {
-    return -200;
-  }
-  if (node.source === 'NT') {
-    return 70;
-  }
-  return 200;
 }
 
 function driftForNode(node: Node, links: Link[], nodeById: Map<string, Node>): number {
@@ -137,7 +68,8 @@ export function buildConceptTopographyReport(nodes: Node[], links: Link[]): Conc
     const tokens = tokenize(`${node.label} ${node.content}`);
     const semanticDensity = Math.min(1, new Set(tokens).size / 40);
     const drift = driftForNode(node, links, nodeById);
-    const year = estimateYear(node);
+    const chronology = inferChronologyFromNode(node);
+    const year = chronology.year;
     const movementNote =
       drift > 0.62
         ? 'High drift: concept profile diverges strongly from adjacent witnesses.'
@@ -151,6 +83,9 @@ export function buildConceptTopographyReport(nodes: Node[], links: Link[]): Conc
       source: node.source,
       tradition: node.tradition?.label,
       estimatedYear: year,
+      datingAnchor: chronology.anchor,
+      datingConfidence: chronology.confidence,
+      datingWarning: chronology.warning,
       semanticDensity,
       institutionalPower: SOURCE_POWER[node.source] ?? 0.5,
       driftScore: drift,

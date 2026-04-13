@@ -155,6 +155,22 @@ function lineColor(type: string): string {
   return hashColor(type);
 }
 
+function confidenceLineWidth(confidence: Link['confidence'] | undefined): number {
+  switch (confidence) {
+    case 'high':
+      return 3.6;
+    case 'low':
+      return 1.4;
+    case 'medium':
+    default:
+      return 2.3;
+  }
+}
+
+function selectedLineWidth(confidence: Link['confidence'] | undefined): number {
+  return Math.max(4.2, confidenceLineWidth(confidence) + 1.1);
+}
+
 function truncateText(value: string, max = 44): string {
   if (value.length <= max) {
     return value;
@@ -190,7 +206,10 @@ export function GraphView({
       .sort()
       .join('~');
     const linkPart = links
-      .map((link) => `${link.source}|${link.target}|${link.type}|${link.label}|${link.description}`)
+      .map(
+        (link) =>
+          `${link.source}|${link.target}|${link.type}|${link.label}|${link.description}|${link.confidence ?? 'medium'}`,
+      )
       .sort()
       .join('~');
     return `${nodePart}__${linkPart}`;
@@ -282,14 +301,15 @@ export function GraphView({
           : lineColor(d.type),
       )
       .attr('stroke-opacity', 0.7)
+      .attr('data-confidence', (d) => d.confidence ?? 'medium')
       .attr('stroke-width', (d) =>
         resolvedLinkId({
           source: endpointId(d.source),
           target: endpointId(d.target),
           type: d.type,
         }) === selectedLinkKey
-          ? 3.2
-          : 1.7,
+          ? selectedLineWidth(d.confidence)
+          : confidenceLineWidth(d.confidence),
       )
       .attr('stroke-dasharray', (d) => lineDash(d.type))
       .style('cursor', 'pointer')
@@ -300,6 +320,7 @@ export function GraphView({
           type: d.type,
           label: d.label,
           description: d.description,
+          confidence: d.confidence,
           scholarlyDebate: d.scholarlyDebate,
         });
       });
@@ -499,7 +520,10 @@ export function GraphView({
       })
       .attr('stroke-width', function () {
         const id = this.getAttribute('data-link-id') ?? '';
-        return id === selectedLinkKey ? 3.2 : 1.7;
+        const confidence = (this.getAttribute('data-confidence') as Link['confidence']) ?? 'medium';
+        return id === selectedLinkKey
+          ? selectedLineWidth(confidence)
+          : confidenceLineWidth(confidence);
       });
   }, [selectedLinkKey, selectedNodeId]);
 

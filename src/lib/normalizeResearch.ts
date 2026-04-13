@@ -2,6 +2,7 @@ import type {
   CounterfactualResult,
   CounterfactualScenarioId,
   Link,
+  LinkConfidence,
   Node,
   NodeType,
   SourceType,
@@ -818,6 +819,82 @@ function normalizeLinkType(rawType: unknown, label?: string, description?: strin
   return 'conceptual-development';
 }
 
+function normalizeConfidenceToken(raw: unknown): LinkConfidence | null {
+  const text = asString(raw).trim().toLowerCase();
+  if (!text) {
+    return null;
+  }
+
+  if (/^(high|strong|certain|secure|robust)$/.test(text)) {
+    return 'high';
+  }
+  if (/^(medium|moderate|mid|plausible|probable)$/.test(text)) {
+    return 'medium';
+  }
+  if (/^(low|weak|tentative|speculative|uncertain)$/.test(text)) {
+    return 'low';
+  }
+
+  return null;
+}
+
+function inferConfidenceFromText(text: string): LinkConfidence | null {
+  const normalized = text.toLowerCase();
+  if (
+    /\b(high confidence|highly probable|strong evidence|well attested|certain|secure|p\s*[<≤]\s*0\.0(?:5|1|01))\b/.test(
+      normalized,
+    )
+  ) {
+    return 'high';
+  }
+  if (
+    /\b(low confidence|speculative|tentative|uncertain|weak evidence|possible only|p\s*[>≥]\s*0\.1)\b/.test(
+      normalized,
+    )
+  ) {
+    return 'low';
+  }
+  if (/\b(medium confidence|moderate|plausible|probable)\b/.test(normalized)) {
+    return 'medium';
+  }
+  return null;
+}
+
+function confidenceByLinkType(type: string): LinkConfidence {
+  switch (type) {
+    case 'direct-citation':
+      return 'high';
+    case 'inferred-sequence':
+    case 'parallel':
+      return 'low';
+    case 'allusion':
+    case 'translation-interpretation':
+    case 'inversion':
+    case 'conceptual-development':
+    default:
+      return 'medium';
+  }
+}
+
+function normalizeLinkConfidence(
+  value: unknown,
+  type: string,
+  label: string,
+  description: string,
+): LinkConfidence {
+  const explicit = normalizeConfidenceToken(value);
+  if (explicit) {
+    return explicit;
+  }
+
+  const inferred = inferConfidenceFromText(`${label} ${description}`);
+  if (inferred) {
+    return inferred;
+  }
+
+  return confidenceByLinkType(type);
+}
+
 const DESCRIPTION_PLACEHOLDER_PATTERNS: RegExp[] = [
   /^no description provided\.?$/i,
   /^no description\.?$/i,
@@ -1152,6 +1229,7 @@ export function normalizeStructuralPayload(raw: unknown): {
       type,
       label,
       description,
+      confidence: normalizeLinkConfidence(entry.confidence, type, label, description),
       scholarlyDebate: normalizeScholarlyDebate(entry.scholarlyDebate),
       methodologyTagging: normalizeMethodologyTagging(entry.methodologyTagging),
       intertextualityMetrics: normalizeIntertextualityMetrics(entry.intertextualityMetrics),
@@ -1187,6 +1265,7 @@ export function normalizeStructuralPayload(raw: unknown): {
         label: 'Inferred Sequence',
         description:
           'Connectivity inferred by the client because no valid edges were parsed from the model output.',
+        confidence: 'low',
       });
       seenLinks.add(signature);
       if (links.length >= MAX_LINKS) {
@@ -1276,6 +1355,7 @@ export function normalizePhase3Payload(
     source: string;
     target: string;
     type: string;
+    confidence?: Link['confidence'];
     scholarlyDebate?: Link['scholarlyDebate'];
   }>;
 } {
@@ -1317,6 +1397,7 @@ export function normalizePhase3Payload(
     source: string;
     target: string;
     type: string;
+    confidence?: Link['confidence'];
     scholarlyDebate?: Link['scholarlyDebate'];
   }> = [];
 
@@ -1332,10 +1413,18 @@ export function normalizePhase3Payload(
       continue;
     }
 
+    const normalizedType = normalizeLinkType(entry.type, asString(entry.label), asString(entry.description));
+
     links.push({
       source,
       target,
-      type: normalizeLinkType(entry.type, asString(entry.label), asString(entry.description)),
+      type: normalizedType,
+      confidence: normalizeLinkConfidence(
+        entry.confidence,
+        normalizedType,
+        asString(entry.label),
+        asString(entry.description),
+      ),
       scholarlyDebate: normalizeScholarlyDebate(entry.scholarlyDebate),
     });
   }
@@ -1487,6 +1576,7 @@ export function normalizeSingleLinkPayload(
   source: string;
   target: string;
   type: string;
+  confidence?: Link['confidence'];
   scholarlyDebate?: Link['scholarlyDebate'];
   methodologyTagging?: Link['methodologyTagging'];
   intertextualityMetrics?: Link['intertextualityMetrics'];
@@ -1509,6 +1599,12 @@ export function normalizeSingleLinkPayload(
   const scholarlyDebate = normalizeScholarlyDebate(entry.scholarlyDebate);
   const methodologyTagging = normalizeMethodologyTagging(entry.methodologyTagging);
   const intertextualityMetrics = normalizeIntertextualityMetrics(entry.intertextualityMetrics);
+  const confidence = normalizeLinkConfidence(
+    entry.confidence,
+    type,
+    asString(entry.label),
+    asString(entry.description),
+  );
   if (!scholarlyDebate && !methodologyTagging && !intertextualityMetrics) {
     return null;
   }
@@ -1517,6 +1613,7 @@ export function normalizeSingleLinkPayload(
     source,
     target,
     type,
+    confidence,
     scholarlyDebate,
     methodologyTagging,
     intertextualityMetrics,

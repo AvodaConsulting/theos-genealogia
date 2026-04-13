@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 
 import type { AppLanguage, Node } from '../types';
+import { chronologyConfidenceLabel, inferChronologyFromNode } from '../lib/chronology';
 import { sourceLabel } from '../lib/i18n';
 
 interface TimelineViewProps {
@@ -32,6 +33,8 @@ interface TimelinePoint {
   y: number;
   z: number;
   anchor: string;
+  confidence: 'high' | 'medium' | 'low';
+  warning?: string;
 }
 
 const SOURCE_COLORS: Record<Node['source'], string> = {
@@ -52,127 +55,6 @@ const SOURCE_LANES: Record<Node['source'], number> = {
   ANE: 6,
 };
 
-const SOURCE_FALLBACK_YEAR: Record<Node['source'], number> = {
-  ANE: -1200,
-  OT: -700,
-  STP: -150,
-  NT: 60,
-  Hellenistic: -250,
-  Manuscript: 200,
-};
-
-const BOOK_YEAR: Record<string, number> = {
-  genesis: -900,
-  exodus: -700,
-  numbers: -700,
-  deuteronomy: -650,
-  psalms: -500,
-  isaiah: -700,
-  jeremiah: -600,
-  ezekiel: -590,
-  daniel: -165,
-  zechariah: -500,
-  malachi: -430,
-  matthew: 80,
-  mark: 70,
-  luke: 85,
-  john: 95,
-  acts: 90,
-  romans: 57,
-  '1corinthians': 54,
-  '2corinthians': 56,
-  galatians: 49,
-  philippians: 61,
-  colossians: 60,
-  ephesians: 62,
-  '1thessalonians': 50,
-  '2thessalonians': 51,
-  '1timothy': 63,
-  '2timothy': 66,
-  titus: 63,
-  philemon: 61,
-  hebrews: 70,
-  james: 60,
-  '1peter': 63,
-  '2peter': 80,
-  '1john': 95,
-  '2john': 95,
-  '3john': 95,
-  jude: 75,
-  revelation: 96,
-  wisdomofsolomon: -30,
-  sirach: -180,
-  '1enoch': -150,
-  '2enoch': 40,
-  jubilees: -150,
-  '4ezra': 95,
-  '2baruch': 90,
-  '1maccabees': -100,
-  '2maccabees': -80,
-};
-
-const BOOK_ALIASES: Record<string, string> = {
-  gen: 'genesis',
-  exod: 'exodus',
-  num: 'numbers',
-  deut: 'deuteronomy',
-  ps: 'psalms',
-  psa: 'psalms',
-  isa: 'isaiah',
-  jer: 'jeremiah',
-  ezek: 'ezekiel',
-  dan: 'daniel',
-  zech: 'zechariah',
-  mal: 'malachi',
-  matt: 'matthew',
-  mark: 'mark',
-  luke: 'luke',
-  john: 'john',
-  acts: 'acts',
-  rom: 'romans',
-  romans: 'romans',
-  '1cor': '1corinthians',
-  '2cor': '2corinthians',
-  gal: 'galatians',
-  phil: 'philippians',
-  col: 'colossians',
-  eph: 'ephesians',
-  '1thess': '1thessalonians',
-  '2thess': '2thessalonians',
-  '1tim': '1timothy',
-  '2tim': '2timothy',
-  tit: 'titus',
-  phlm: 'philemon',
-  heb: 'hebrews',
-  jas: 'james',
-  james: 'james',
-  '1pet': '1peter',
-  '2pet': '2peter',
-  '1jn': '1john',
-  '2jn': '2john',
-  '3jn': '3john',
-  jude: 'jude',
-  rev: 'revelation',
-  wis: 'wisdomofsolomon',
-  wisdom: 'wisdomofsolomon',
-  wisdomofsolomon: 'wisdomofsolomon',
-  sir: 'sirach',
-  sirach: 'sirach',
-  ecclesiasticus: 'sirach',
-  '1en': '1enoch',
-  '1enoch': '1enoch',
-  '2en': '2enoch',
-  '2enoch': '2enoch',
-  jub: 'jubilees',
-  jubilees: 'jubilees',
-  '4ezr': '4ezra',
-  '4ezra': '4ezra',
-  '2bar': '2baruch',
-  '2baruch': '2baruch',
-  '1macc': '1maccabees',
-  '2macc': '2maccabees',
-};
-
 function normalizeSpaces(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
@@ -190,72 +72,6 @@ function formatYear(year: number): string {
     return `${Math.abs(Math.round(year))} BCE`;
   }
   return `${Math.round(year)} CE`;
-}
-
-function normalizeBookToken(raw: string): string | null {
-  const compact = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (!compact) {
-    return null;
-  }
-  return BOOK_ALIASES[compact] ?? compact;
-}
-
-function inferYearFromCitation(citation: string): { year: number; anchor: string } | null {
-  const normalized = normalizeSpaces(citation);
-
-  const scriptureMatch = normalized
-    .replace(/\b(?:LXX|MT|HB|GNT|NA28|UBS5)\b/gi, '')
-    .trim()
-    .match(/^([1-3]?\s*[A-Za-z. ]+)\s+\d+(?::\d+(?:-\d+)?)?$/);
-  if (scriptureMatch) {
-    const token = normalizeBookToken(scriptureMatch[1] ?? '');
-    const year = token ? BOOK_YEAR[token] : undefined;
-    if (typeof year === 'number') {
-      return { year, anchor: `Inferred from citation: ${normalized}` };
-    }
-  }
-
-  if (/\b(?:Josephus|Antiquities|War)\b/i.test(normalized)) {
-    return { year: 90, anchor: `Inferred from citation: ${normalized}` };
-  }
-  if (/\bPhilo\b/i.test(normalized)) {
-    return { year: 30, anchor: `Inferred from citation: ${normalized}` };
-  }
-  if (/\b(?:1\s*En(?:och)?\.?|Jub(?:ilees)?\.?)\b/i.test(normalized)) {
-    return { year: -150, anchor: `Inferred from citation: ${normalized}` };
-  }
-  if (/\bSir(?:ach)?\.?/i.test(normalized)) {
-    return { year: -180, anchor: `Inferred from citation: ${normalized}` };
-  }
-  if (/\bWis(?:dom)?(?:\s+of\s+Solomon)?\.?/i.test(normalized)) {
-    return { year: -30, anchor: `Inferred from citation: ${normalized}` };
-  }
-  if (/\b(?:DSS|[1-9]\d?Q[A-Za-z0-9-]+)\b/i.test(normalized)) {
-    return { year: -100, anchor: `Inferred from citation: ${normalized}` };
-  }
-  if (
-    /\b(?:Enuma Elish|Atrahasis|Gilgamesh|KTU|CAT\s+\d|Ugarit|Ugaritic|Pyramid Texts?|Coffin Texts?|Avesta|Yasna|Vendidad)\b/i.test(
-      normalized,
-    )
-  ) {
-    return { year: -1200, anchor: `Inferred from citation: ${normalized}` };
-  }
-
-  return null;
-}
-
-function estimateYear(node: Node): { year: number; anchor: string } {
-  for (const citation of node.citations ?? []) {
-    const inferred = inferYearFromCitation(citation);
-    if (inferred) {
-      return inferred;
-    }
-  }
-
-  return {
-    year: SOURCE_FALLBACK_YEAR[node.source],
-    anchor: `Fallback by source lane: ${node.source}`,
-  };
 }
 
 function buildYearTicks(minYear: number, maxYear: number): number[] {
@@ -308,7 +124,12 @@ function TimelineTooltip({
         <p className="text-slate-600">{zh ? '傳統：' : 'Tradition: '} {point.traditionLabel}</p>
       ) : null}
       <p className="text-slate-700">{zh ? '推定年代：' : 'Estimated date: '} {formatYear(point.x)}</p>
+      <p className="text-slate-600">
+        {zh ? '可信度：' : 'Confidence: '}
+        {chronologyConfidenceLabel(point.confidence, language)}
+      </p>
       <p className="text-slate-500">{point.anchor}</p>
+      {point.warning ? <p className="text-amber-700">{zh ? `警示：${point.warning}` : `Warning: ${point.warning}`}</p> : null}
     </div>
   );
 }
@@ -319,7 +140,7 @@ export function TimelineView({ language, nodes, selectedNodeId, onNodeSelect }: 
 
   const points: TimelinePoint[] = nodes
     .map((node) => {
-      const estimate = estimateYear(node);
+      const estimate = inferChronologyFromNode(node);
       return {
         node,
         id: node.id,
@@ -332,6 +153,8 @@ export function TimelineView({ language, nodes, selectedNodeId, onNodeSelect }: 
         y: SOURCE_LANES[node.source],
         z: node.id === selectedNodeId ? 360 : 180,
         anchor: estimate.anchor,
+        confidence: estimate.confidence,
+        warning: estimate.warning,
       };
     })
     .sort((a, b) => a.x - b.x || a.y - b.y)
@@ -372,8 +195,8 @@ export function TimelineView({ language, nodes, selectedNodeId, onNodeSelect }: 
       </div>
       <p className="mb-2 text-[11px] text-slate-500">
         {zh
-          ? '年代優先依引文推定；若無引文則使用來源時代預設值。點擊節點可開啟詳細檔案。'
-          : 'Chronology is citation-inferred when possible; otherwise source-era defaults are used. Click a point to open its dossier.'}
+          ? '年代優先依引文推定；若無充分依據則回退為來源時代估值，並標示可信度與警示。點擊節點可開啟詳細檔案。'
+          : 'Chronology is citation-inferred when possible; otherwise source-era fallback is used with explicit confidence/warning flags. Click a point to open its dossier.'}
       </p>
 
       <div className="min-h-0 flex-1 grid-cols-1 gap-2 lg:grid lg:grid-cols-[minmax(0,1fr)_240px]">
@@ -444,6 +267,10 @@ export function TimelineView({ language, nodes, selectedNodeId, onNodeSelect }: 
                   <p className="font-semibold">{point.shortLabel}</p>
                   <p className="text-[11px] text-slate-500">
                     {formatYear(point.x)} • {sourceLabel(point.source, language)}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    {zh ? '可信度：' : 'Confidence: '}
+                    {chronologyConfidenceLabel(point.confidence, language)}
                   </p>
                   {point.traditionLabel ? (
                     <p className="text-[11px] text-slate-500">

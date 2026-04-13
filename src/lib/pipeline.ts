@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import { generateJson, generateText, getProviderLabel } from './llmClient';
 import { isZhHant } from './i18n';
+import { inferChronologyFromNode } from './chronology';
 import {
   normalizeCounterfactualPayload,
   normalizePublicationPayload,
@@ -154,6 +155,76 @@ function withLockedPublicationBibliography(
     : '## Bibliography (Verified Sources Only, System Locked)';
   const entries = referenceTaggedBibliography(citations);
   return `${normalized}\n\n${systemHeading}\n${entries}`;
+}
+
+function buildVerificationNotice(graph: { nodes: Node[]; links: Link[] }, language: AppLanguage): string {
+  const zh = isZhHant(language);
+  const nodesWithoutCitations = graph.nodes.filter((node) => (node.citations?.length ?? 0) === 0);
+  const rejected = graph.nodes.flatMap((node) =>
+    (node.citationAudit?.rejected ?? []).map((entry) => `${node.id}: ${entry.citation} (${entry.reason})`),
+  );
+  const lowDating = graph.nodes
+    .map((node) => ({ node, dating: inferChronologyFromNode(node) }))
+    .filter((entry) => entry.dating.confidence === 'low');
+
+  const lines: string[] = [];
+  if (zh) {
+    lines.push('## 驗證與風險提示');
+    lines.push(
+      `- 已驗證引文總數：${graph.nodes.reduce((sum, node) => sum + (node.citations?.length ?? 0), 0)}。`,
+    );
+    lines.push(`- 無引文節點：${nodesWithoutCitations.length}。`);
+    lines.push(`- 被剔除引文：${rejected.length}。`);
+    lines.push(`- 低可信度年代估值節點：${lowDating.length}。`);
+    if (rejected.length > 0) {
+      lines.push('- 以下引文未通過驗證，請勿視為確證：');
+      for (const item of rejected.slice(0, 8)) {
+        lines.push(`  - ${item}`);
+      }
+      if (rejected.length > 8) {
+        lines.push(`  - 另有 ${rejected.length - 8} 筆未列出。`);
+      }
+    }
+    if (lowDating.length > 0) {
+      lines.push('- 以下節點年代僅為粗略推定，請以專門文獻復核：');
+      for (const entry of lowDating.slice(0, 8)) {
+        lines.push(`  - ${entry.node.label}: ${entry.dating.anchor}`);
+      }
+      if (lowDating.length > 8) {
+        lines.push(`  - 另有 ${lowDating.length - 8} 個節點未列出。`);
+      }
+    }
+    lines.push('- 若無法外部核驗，相關敘述僅可視為研究假設，不可視為定論。');
+    return lines.join('\n');
+  }
+
+  lines.push('## Verification And Risk Notice');
+  lines.push(
+    `- Total verified citations: ${graph.nodes.reduce((sum, node) => sum + (node.citations?.length ?? 0), 0)}.`,
+  );
+  lines.push(`- Nodes without citations: ${nodesWithoutCitations.length}.`);
+  lines.push(`- Rejected citations: ${rejected.length}.`);
+  lines.push(`- Nodes with low-confidence chronology estimates: ${lowDating.length}.`);
+  if (rejected.length > 0) {
+    lines.push('- The following citations failed verification and should be treated as unverified:');
+    for (const item of rejected.slice(0, 8)) {
+      lines.push(`  - ${item}`);
+    }
+    if (rejected.length > 8) {
+      lines.push(`  - Plus ${rejected.length - 8} additional rejected items.`);
+    }
+  }
+  if (lowDating.length > 0) {
+    lines.push('- The following chronology anchors are low-confidence and require specialist review:');
+    for (const entry of lowDating.slice(0, 8)) {
+      lines.push(`  - ${entry.node.label}: ${entry.dating.anchor}`);
+    }
+    if (lowDating.length > 8) {
+      lines.push(`  - Plus ${lowDating.length - 8} additional low-confidence nodes.`);
+    }
+  }
+  lines.push('- Any claim lacking external confirmation should be treated as a research hypothesis.');
+  return lines.join('\n');
 }
 
 function extractMarkdownText(raw: string): string {
@@ -377,8 +448,9 @@ export async function generateSummaryOnDemand(
       collectVerifiedCitations(graph),
       language,
     );
+    const withNotice = `${withBibliography}\n\n${buildVerificationNotice(graph, language)}`;
     log('phase4-synthesis-summary', 'success', 'Summary generated.');
-    return withBibliography;
+    return withNotice;
   } catch (error) {
     return withLoggedFailure(error, 'phase4-synthesis-summary', log);
   }
@@ -468,8 +540,9 @@ export async function generateLivingPublicationOnDemand(
       collectVerifiedCitations(graph),
       language,
     );
+    const withNotice = `${locked}\n\n${buildVerificationNotice(graph, language)}`;
     log('phase9-living-publication', 'success', 'Publication-grade draft generated.');
-    return locked;
+    return withNotice;
   } catch (error) {
     return withLoggedFailure(error, 'phase9-living-publication', log);
   }

@@ -1,6 +1,7 @@
 export type SourceType = 'ANE' | 'OT' | 'STP' | 'NT' | 'Hellenistic' | 'Manuscript';
 export type NodeType = 'verse' | 'concept' | 'context' | 'rupture' | 'variant';
 export type AppLanguage = 'en' | 'zh-Hant';
+export type LinkConfidence = 'high' | 'medium' | 'low';
 export type HermeneuticFramework =
   | 'Historical-Critical'
   | 'Literary'
@@ -133,6 +134,9 @@ export interface ConceptTopographyEntry {
   source: SourceType;
   tradition?: string;
   estimatedYear: number;
+  datingAnchor?: string;
+  datingConfidence?: 'high' | 'medium' | 'low';
+  datingWarning?: string;
   semanticDensity: number;
   institutionalPower: number;
   driftScore: number;
@@ -382,6 +386,7 @@ export interface Link {
   type: string;
   label: string;
   description: string;
+  confidence?: LinkConfidence;
   scholarlyDebate?: {
     scholar: string;
     position: string;

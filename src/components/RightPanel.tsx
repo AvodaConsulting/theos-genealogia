@@ -40,6 +40,7 @@ import type {
   VerificationResult,
 } from '../types';
 import { cn } from '../lib/cn';
+import { chronologyConfidenceLabel } from '../lib/chronology';
 import { counterfactualLabel, formatUiDate, lineTypeLabel, nodeTypeLabel, sourceLabel } from '../lib/i18n';
 
 interface RightPanelProps {
@@ -1892,12 +1893,22 @@ export function RightPanel({
                   {conceptTopographyReport.entries.slice(0, 20).map((entry) => (
                     <li key={`topo-${entry.nodeId}`} className="rounded border border-amber-100 bg-amber-50/30 p-2">
                       <p className="font-semibold text-slate-900">
-                        {entry.label} ({entry.source})
+                        {entry.label} ({sourceLabel(entry.source, language)})
                       </p>
                       <p>
-                        Year {entry.estimatedYear} • Drift {entry.driftScore.toFixed(2)} • Power{' '}
-                        {entry.institutionalPower.toFixed(2)}
+                        {zh ? '年份' : 'Year'} {entry.estimatedYear} • {zh ? '漂移' : 'Drift'}{' '}
+                        {entry.driftScore.toFixed(2)} • {zh ? '權力' : 'Power'} {entry.institutionalPower.toFixed(2)}
                       </p>
+                      {entry.datingConfidence ? (
+                        <p>
+                          {zh ? '年代可信度' : 'Dating confidence'}:{' '}
+                          {chronologyConfidenceLabel(entry.datingConfidence, language)}
+                        </p>
+                      ) : null}
+                      {entry.datingAnchor ? <p className="text-slate-600">{entry.datingAnchor}</p> : null}
+                      {entry.datingWarning ? (
+                        <p className="text-amber-700">{zh ? `警示：${entry.datingWarning}` : `Warning: ${entry.datingWarning}`}</p>
+                      ) : null}
                       <p>{entry.movementNote}</p>
                     </li>
                   ))}
