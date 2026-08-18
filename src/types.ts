@@ -444,6 +444,15 @@ export interface Node {
   };
   citationAudit?: {
     verified: string[];
+    recognized?: Array<{
+      citation: string;
+      reason: string;
+    }>;
+    retained?: Array<{
+      citation: string;
+      rationale: string;
+      retainedAt: string;
+    }>;
     rejected?: Array<{
       citation: string;
       reason: string;

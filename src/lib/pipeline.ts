@@ -36,6 +36,11 @@ import {
   verificationPrompt,
 } from './pipelinePrompts';
 import { buildHeuristicNodeEnrichment, hasDeepNodePatch } from './nodeHeuristics';
+import {
+  getRecognizedNodeCitations,
+  getRetainedNodeCitations,
+  getVerifiedNodeCitations,
+} from './citationVerification';
 
 interface Logger {
   (phase: PhaseKey, status: 'running' | 'success' | 'error', message: string): void;
@@ -61,11 +66,39 @@ function collectVerifiedCitations(graph: { nodes: Node[]; links: Link[] }): stri
   return Array.from(
     new Set(
       graph.nodes
-        .flatMap((node) => node.citations ?? [])
+        .flatMap((node) => getVerifiedNodeCitations(node))
         .map((citation) => citation.trim())
         .filter(Boolean),
     ),
   );
+}
+
+function collectProvisionalCitations(graph: { nodes: Node[]; links: Link[] }): Array<{
+  citation: string;
+  status: 'recognized' | 'retained';
+  note: string;
+}> {
+  const seen = new Set<string>();
+  const entries: Array<{ citation: string; status: 'recognized' | 'retained'; note: string }> = [];
+
+  for (const node of graph.nodes) {
+    for (const entry of getRecognizedNodeCitations(node)) {
+      const key = entry.citation.trim().toLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        entries.push({ citation: entry.citation, status: 'recognized', note: entry.reason });
+      }
+    }
+    for (const entry of getRetainedNodeCitations(node)) {
+      const key = entry.citation.trim().toLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        entries.push({ citation: entry.citation, status: 'retained', note: entry.rationale });
+      }
+    }
+  }
+
+  return entries;
 }
 
 function referenceTaggedBibliography(citations: string[]): string {
@@ -73,6 +106,32 @@ function referenceTaggedBibliography(citations: string[]): string {
     return '- [R0] No verified citation available';
   }
   return citations.map((citation, index) => `- [R${index + 1}] ${citation}`).join('\n');
+}
+
+function provisionalCitationAppendix(
+  markdown: string,
+  graph: { nodes: Node[]; links: Link[] },
+  language: AppLanguage,
+): string {
+  const entries = collectProvisionalCitations(graph);
+  if (entries.length === 0) {
+    return markdown;
+  }
+
+  const heading = isZhHant(language)
+    ? '## 待補核來源（不可視為已驗證書目）'
+    : '## Sources Retained Pending Verification (Not Verified Bibliography)';
+  const warning = isZhHant(language)
+    ? '下列項目因可辨識的專門縮寫或研究者保留理由而留在研究脈絡中；它們不可作為已核實證據，發表前須補足定位與外部核驗。'
+    : 'The following entries remain in the research context because they are recognized specialist abbreviations or were retained by the researcher; they are not verified evidence and require a locator plus external review before publication.';
+  const lines = entries.map((entry) => {
+    const label = entry.status === 'recognized'
+      ? (isZhHant(language) ? '可辨識縮寫' : 'Recognized abbreviation')
+      : (isZhHant(language) ? '研究者保留' : 'Researcher-retained');
+    return `- ${entry.citation} [${label}]: ${entry.note}`;
+  });
+
+  return `${markdown}\n\n${heading}\n${warning}\n${lines.join('\n')}`;
 }
 
 function ensureStructuredSummary(summary: string, language: AppLanguage): string {
@@ -175,9 +234,14 @@ function withLockedPublicationBibliography(
 
 function buildVerificationNotice(graph: { nodes: Node[]; links: Link[] }, language: AppLanguage): string {
   const zh = isZhHant(language);
-  const nodesWithoutCitations = graph.nodes.filter((node) => (node.citations?.length ?? 0) === 0);
+  const nodesWithoutCitations = graph.nodes.filter((node) => getVerifiedNodeCitations(node).length === 0);
   const rejected = graph.nodes.flatMap((node) =>
     (node.citationAudit?.rejected ?? []).map((entry) => `${node.id}: ${entry.citation} (${entry.reason})`),
+  );
+  const provisional = collectProvisionalCitations(graph);
+  const verifiedCount = graph.nodes.reduce(
+    (sum, node) => sum + getVerifiedNodeCitations(node).length,
+    0,
   );
   const lowDating = graph.nodes
     .map((node) => ({ node, dating: inferChronologyFromNode(node) }))
@@ -187,13 +251,14 @@ function buildVerificationNotice(graph: { nodes: Node[]; links: Link[] }, langua
   if (zh) {
     lines.push('## 驗證與風險提示');
     lines.push(
-      `- 已驗證引文總數：${graph.nodes.reduce((sum, node) => sum + (node.citations?.length ?? 0), 0)}。`,
+      `- 已驗證引文總數：${verifiedCount}。`,
     );
     lines.push(`- 無引文節點：${nodesWithoutCitations.length}。`);
-    lines.push(`- 被剔除引文：${rejected.length}。`);
+    lines.push(`- 待補核引文：${rejected.length}。`);
+    lines.push(`- 已保留待核來源：${provisional.length}。`);
     lines.push(`- 低可信度年代估值節點：${lowDating.length}。`);
     if (rejected.length > 0) {
-      lines.push('- 以下引文未通過驗證，請勿視為確證：');
+      lines.push('- 以下引文尚未通過驗證，請勿視為確證：');
       for (const item of rejected.slice(0, 8)) {
         lines.push(`  - ${item}`);
       }
@@ -216,13 +281,14 @@ function buildVerificationNotice(graph: { nodes: Node[]; links: Link[] }, langua
 
   lines.push('## Verification And Risk Notice');
   lines.push(
-    `- Total verified citations: ${graph.nodes.reduce((sum, node) => sum + (node.citations?.length ?? 0), 0)}.`,
+    `- Total verified citations: ${verifiedCount}.`,
   );
   lines.push(`- Nodes without citations: ${nodesWithoutCitations.length}.`);
-  lines.push(`- Rejected citations: ${rejected.length}.`);
+  lines.push(`- Citations needing review: ${rejected.length}.`);
+  lines.push(`- Sources retained pending verification: ${provisional.length}.`);
   lines.push(`- Nodes with low-confidence chronology estimates: ${lowDating.length}.`);
   if (rejected.length > 0) {
-    lines.push('- The following citations failed verification and should be treated as unverified:');
+    lines.push('- The following citations remain unverified and should be treated as research leads, not evidence:');
     for (const item of rejected.slice(0, 8)) {
       lines.push(`  - ${item}`);
     }
@@ -464,7 +530,8 @@ export async function generateSummaryOnDemand(
       collectVerifiedCitations(graph),
       language,
     );
-    const withNotice = `${withBibliography}\n\n${buildVerificationNotice(graph, language)}`;
+    const withProvisionalSources = provisionalCitationAppendix(withBibliography, graph, language);
+    const withNotice = `${withProvisionalSources}\n\n${buildVerificationNotice(graph, language)}`;
     log('phase4-synthesis-summary', 'success', 'Summary generated.');
     return withNotice;
   } catch (error) {
@@ -556,7 +623,8 @@ export async function generateLivingPublicationOnDemand(
       collectVerifiedCitations(graph),
       language,
     );
-    const withNotice = `${locked}\n\n${buildVerificationNotice(graph, language)}`;
+    const withProvisionalSources = provisionalCitationAppendix(locked, graph, language);
+    const withNotice = `${withProvisionalSources}\n\n${buildVerificationNotice(graph, language)}`;
     log('phase9-living-publication', 'success', 'Publication-grade draft generated.');
     return withNotice;
   } catch (error) {

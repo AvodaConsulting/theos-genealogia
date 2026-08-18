@@ -15,7 +15,12 @@ import {
   generateSummaryOnDemand,
   runStructuralPhase,
 } from './lib/pipeline';
-import { auditNodeCitations } from './lib/citationVerification';
+import {
+  auditNodeCitations,
+  getRecognizedNodeCitations,
+  getRetainedNodeCitations,
+  getVerifiedNodeCitations,
+} from './lib/citationVerification';
 import { buildConceptTopographyReport } from './lib/conceptTopography';
 import { computeIntertextualityStats, statsToLinkMetrics } from './lib/intertextuality';
 import { computePeerReviewGate, computeRevisionDiff, createBlindReviewPacket, createPeerReviewComment } from './lib/peerReview';
@@ -116,6 +121,22 @@ function linkKey(link: Pick<Link, 'source' | 'target' | 'type'>): string {
 
 function makeNoteId(): string {
   return `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function citationKey(citation: string): string {
+  return citation.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function uniqueCitations(citations: string[]): string[] {
+  const seen = new Set<string>();
+  return citations.filter((citation) => {
+    const key = citationKey(citation);
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 function mergeNodePatch(
@@ -430,7 +451,15 @@ export default function App() {
       auditedNodes.push(audited);
     }
 
-    const verifiedCount = auditedNodes.reduce((count, node) => count + (node.citations?.length ?? 0), 0);
+    const verifiedCount = auditedNodes.reduce((count, node) => count + getVerifiedNodeCitations(node).length, 0);
+    const recognizedCount = auditedNodes.reduce(
+      (count, node) => count + getRecognizedNodeCitations(node).length,
+      0,
+    );
+    const retainedCount = auditedNodes.reduce(
+      (count, node) => count + getRetainedNodeCitations(node).length,
+      0,
+    );
     const rejectedCount = auditedNodes.reduce(
       (count, node) => count + (node.citationAudit?.rejected?.length ?? 0),
       0,
@@ -438,7 +467,7 @@ export default function App() {
     appendLog(
       'phase8-citation-audit',
       'success',
-      `Citation audit complete: ${verifiedCount} verified, ${rejectedCount} rejected.`,
+      `Citation audit complete: ${verifiedCount} verified, ${recognizedCount} recognized, ${retainedCount} retained, ${rejectedCount} needing review.`,
     );
 
     return applyHeuristicRuptureDiagnosticsToGraph(auditedNodes);
@@ -743,6 +772,51 @@ export default function App() {
     } finally {
       setManuscriptPeerReviewLoading(false);
     }
+  }
+
+  function retainCitationPendingVerification(nodeId: string, citation: string, rationale: string) {
+    const trimmedRationale = rationale.trim();
+    if (trimmedRationale.length < 8) {
+      setError(
+        language === 'zh-Hant'
+          ? '請用至少八個字元說明保留此引文的理由。'
+          : 'Provide at least eight characters explaining why this citation should be retained.',
+      );
+      return;
+    }
+
+    setResult((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((node) => {
+        if (node.id !== nodeId || !node.citationAudit) {
+          return node;
+        }
+
+        const key = citationKey(citation);
+        const retained = [
+          ...(node.citationAudit.retained ?? []).filter((entry) => citationKey(entry.citation) !== key),
+          { citation, rationale: trimmedRationale, retainedAt: new Date().toISOString() },
+        ];
+        return {
+          ...node,
+          citations: uniqueCitations([...(node.citations ?? []), citation]),
+          citationAudit: {
+            ...node.citationAudit,
+            retained,
+            rejected: (node.citationAudit.rejected ?? []).filter(
+              (entry) => citationKey(entry.citation) !== key,
+            ),
+          },
+        };
+      }),
+    }));
+    appendLog(
+      'phase8-citation-audit',
+      'success',
+      language === 'zh-Hant'
+        ? `已保留待補核引文：${citation}`
+        : `Citation retained pending verification: ${citation}`,
+    );
   }
 
   function addPeerReviewComment(input: PeerReviewCommentInput) {
@@ -1142,6 +1216,7 @@ export default function App() {
           enrichedLinkCount={enrichedLinkCount}
           onGenerateBlindReviewPacket={() => void generateBlindReviewPacket()}
           onGenerateManuscriptPeerReview={(request) => void generateManuscriptPeerReview(request)}
+          onRetainCitationPendingVerification={retainCitationPendingVerification}
           onAddPeerReviewComment={addPeerReviewComment}
           onUpdatePeerReviewCommentStatus={updatePeerReviewCommentStatus}
           tab={rightTab}

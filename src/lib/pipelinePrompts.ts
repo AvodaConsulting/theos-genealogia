@@ -6,6 +6,12 @@ import type {
   ResearchMethodologyProfile,
 } from '../types';
 import { generationLanguageDirective, isZhHant } from './i18n';
+import {
+  getRecognizedNodeCitations,
+  getRetainedNodeCitations,
+  getResearchContextCitations,
+  getVerifiedNodeCitations,
+} from './citationVerification';
 
 const sharedRules = `
 You are TheosGenealogia, a doctoral-level biblical philologist.
@@ -30,7 +36,12 @@ function compactGraph(graph: { nodes: Node[]; links: Link[] }): string {
         type: node.type,
         source: node.source,
         tradition: node.tradition,
-        citations: node.citations,
+        citations: getResearchContextCitations(node),
+        citationStatus: {
+          verified: getVerifiedNodeCitations(node),
+          recognized: getRecognizedNodeCitations(node).map((entry) => entry.citation),
+          retainedPendingVerification: getRetainedNodeCitations(node).map((entry) => entry.citation),
+        },
       })),
       links: graph.links.map((link) => ({
         source: link.source,
@@ -48,7 +59,7 @@ function verifiedCitationsPool(graph: { nodes: Node[]; links: Link[] }): string 
   const unique = Array.from(
     new Set(
       graph.nodes
-        .flatMap((node) => node.citations ?? [])
+        .flatMap((node) => getVerifiedNodeCitations(node))
         .map((citation) => citation.trim())
         .filter(Boolean),
     ),
@@ -61,11 +72,24 @@ function verifiedCitationsPool(graph: { nodes: Node[]; links: Link[] }): string 
   return unique.map((citation) => `- ${citation}`).join('\n');
 }
 
+function provisionalCitationsPool(graph: { nodes: Node[]; links: Link[] }): string {
+  const unique = Array.from(
+    new Set(
+      graph.nodes.flatMap((node) => [
+        ...getRecognizedNodeCitations(node).map((entry) => `${entry.citation} [recognized: ${entry.reason}]`),
+        ...getRetainedNodeCitations(node).map((entry) => `${entry.citation} [retained: ${entry.rationale}]`),
+      ]),
+    ),
+  );
+
+  return unique.length > 0 ? unique.map((citation) => `- ${citation}`).join('\n') : '- None';
+}
+
 function verifiedReferenceTags(graph: { nodes: Node[]; links: Link[] }): string {
   const unique = Array.from(
     new Set(
       graph.nodes
-        .flatMap((node) => node.citations ?? [])
+        .flatMap((node) => getVerifiedNodeCitations(node))
         .map((citation) => citation.trim())
         .filter(Boolean),
     ),
@@ -467,6 +491,9 @@ ${JSON.stringify(graph, null, 2)}
 Verified citation pool (use only these citations):
 ${verifiedCitationsPool(graph)}
 
+Recognized or researcher-retained sources (context only; do not present them as verified evidence):
+${provisionalCitationsPool(graph)}
+
 Task:
 - Write an 800-1200 word academic essay in Markdown.
 - The response MUST follow this structure exactly:
@@ -580,6 +607,9 @@ ${compactGraph(graph)}
 Verified citation pool:
 ${verifiedCitationsPool(graph)}
 
+Recognized or researcher-retained sources (do not cite these with [R#] tags or describe them as verified):
+${provisionalCitationsPool(graph)}
+
 Verified reference tags (use only these tags inline):
 ${verifiedReferenceTags(graph)}
 
@@ -655,6 +685,9 @@ ${compactGraph(graph)}
 
 Verified citation pool:
 ${verifiedCitationsPool(graph)}
+
+Recognized or researcher-retained sources (do not cite these with [R#] tags or describe them as verified):
+${provisionalCitationsPool(graph)}
 
 Verified reference tags (use only these tags inline):
 ${verifiedReferenceTags(graph)}

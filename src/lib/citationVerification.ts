@@ -17,11 +17,13 @@ interface CitationVerificationInput {
 interface CitationDecision {
   citation: string;
   verified: boolean;
+  recognized?: boolean;
   reason: string;
 }
 
 export interface CitationAuditResult {
   verified: string[];
+  recognized: Array<{ citation: string; reason: string }>;
   rejected: Array<{ citation: string; reason: string }>;
   checkedAt: string;
   verifier: string;
@@ -392,6 +394,22 @@ function verifyCorpusCitation(citation: string): CitationDecision | null {
   return null;
 }
 
+function verifyReferenceAbbreviation(citation: string): CitationDecision | null {
+  const normalized = normalizeSpaces(citation);
+
+  if (/\bHALOT\b/i.test(normalized)) {
+    return {
+      citation,
+      verified: false,
+      recognized: true,
+      reason:
+        'Recognized as HALOT (The Hebrew and Aramaic Lexicon of the Old Testament); add a lemma, volume, page, or entry locator before treating it as a fully verified citation.',
+    };
+  }
+
+  return null;
+}
+
 async function fetchJson(url: string): Promise<unknown> {
   const controller = new AbortController();
   const timeoutId = globalThis.setTimeout(() => controller.abort(), 9000);
@@ -526,26 +544,90 @@ export async function auditCitations({
       continue;
     }
 
+    const abbreviation = verifyReferenceAbbreviation(citation);
+    if (abbreviation) {
+      decisions.push(abbreviation);
+      continue;
+    }
+
     const crossref = await verifyWithCrossref(citation, query, context);
     decisions.push(crossref);
   }
 
   return {
     verified: decisions.filter((entry) => entry.verified).map((entry) => entry.citation),
+    recognized: decisions
+      .filter((entry) => entry.recognized)
+      .map((entry) => ({ citation: entry.citation, reason: entry.reason })),
     rejected: decisions
-      .filter((entry) => !entry.verified)
+      .filter((entry) => !entry.verified && !entry.recognized)
       .map((entry) => ({ citation: entry.citation, reason: entry.reason })),
     checkedAt: new Date().toISOString(),
     verifier: 'rule-engine+crossref',
   };
 }
 
+function citationKey(citation: string): string {
+  return normalizeSpaces(citation).toLowerCase();
+}
+
+function uniqueCitations(citations: string[]): string[] {
+  const seen = new Set<string>();
+  return citations.filter((citation) => {
+    const normalized = normalizeSpaces(citation);
+    if (!normalized || seen.has(citationKey(normalized))) {
+      return false;
+    }
+    seen.add(citationKey(normalized));
+    return true;
+  });
+}
+
+export function getVerifiedNodeCitations(node: Node): string[] {
+  if (!node.citationAudit) {
+    return node.citations ?? [];
+  }
+  return node.citationAudit.verified ?? [];
+}
+
+export function getRecognizedNodeCitations(node: Node): Array<{ citation: string; reason: string }> {
+  return node.citationAudit?.recognized ?? [];
+}
+
+export function getRetainedNodeCitations(
+  node: Node,
+): Array<{ citation: string; rationale: string; retainedAt: string }> {
+  return node.citationAudit?.retained ?? [];
+}
+
+export function getResearchContextCitations(node: Node): string[] {
+  if (!node.citationAudit) {
+    return uniqueCitations(node.citations ?? []);
+  }
+
+  return uniqueCitations([
+    ...getVerifiedNodeCitations(node),
+    ...getRecognizedNodeCitations(node).map((entry) => entry.citation),
+    ...getRetainedNodeCitations(node).map((entry) => entry.citation),
+  ]);
+}
+
 export async function auditNodeCitations(node: Node, query: string): Promise<Node> {
-  if (!node.citations || node.citations.length === 0) {
+  const retained = getRetainedNodeCitations(node);
+  const citationsToAudit = uniqueCitations([
+    ...(node.citations ?? []),
+    ...(node.citationAudit?.rejected ?? []).map((entry) => entry.citation),
+    ...getRecognizedNodeCitations(node).map((entry) => entry.citation),
+    ...retained.map((entry) => entry.citation),
+  ]);
+
+  if (citationsToAudit.length === 0) {
     return {
       ...node,
       citationAudit: {
         verified: [],
+        recognized: [],
+        retained: [],
         rejected: [],
         checkedAt: new Date().toISOString(),
         verifier: 'rule-engine+crossref',
@@ -556,12 +638,34 @@ export async function auditNodeCitations(node: Node, query: string): Promise<Nod
   const audit = await auditCitations({
     query,
     context: `${node.label}\n${node.content}`,
-    citations: node.citations,
+    citations: citationsToAudit,
   });
+
+  const verifiedKeys = new Set(audit.verified.map(citationKey));
+  const retainedKeys = new Set(retained.map((entry) => citationKey(entry.citation)));
+  const recognized = audit.recognized.filter(
+    (entry) => !verifiedKeys.has(citationKey(entry.citation)) && !retainedKeys.has(citationKey(entry.citation)),
+  );
+  const recognizedKeys = new Set(recognized.map((entry) => citationKey(entry.citation)));
+  const stillRetained = retained.filter((entry) => !verifiedKeys.has(citationKey(entry.citation)));
+  const rejected = audit.rejected.filter((entry) => {
+    const key = citationKey(entry.citation);
+    return !verifiedKeys.has(key) && !recognizedKeys.has(key) && !retainedKeys.has(key);
+  });
+  const citationAudit = {
+    ...audit,
+    recognized,
+    retained: stillRetained,
+    rejected,
+  };
 
   return {
     ...node,
-    citations: audit.verified,
-    citationAudit: audit,
+    citations: uniqueCitations([
+      ...audit.verified,
+      ...recognized.map((entry) => entry.citation),
+      ...stillRetained.map((entry) => entry.citation),
+    ]),
+    citationAudit,
   };
 }

@@ -1,4 +1,10 @@
 import type { Link, LivingPublication, Node, ResearchResult } from '../types';
+import {
+  getRecognizedNodeCitations,
+  getResearchContextCitations,
+  getRetainedNodeCitations,
+  getVerifiedNodeCitations,
+} from './citationVerification';
 
 function stableHash(value: string): string {
   let hash = 2166136261;
@@ -13,7 +19,7 @@ function uniqueCitations(nodes: Node[]): string[] {
   return Array.from(
     new Set(
       nodes
-        .flatMap((node) => node.citations ?? [])
+        .flatMap((node) => getVerifiedNodeCitations(node))
         .map((citation) => citation.trim())
         .filter(Boolean),
     ),
@@ -24,7 +30,7 @@ function buildCitationIndex(nodes: Node[]): LivingPublication['citationIndex'] {
   const map = new Map<string, Set<string>>();
 
   for (const node of nodes) {
-    for (const citation of node.citations ?? []) {
+    for (const citation of getResearchContextCitations(node)) {
       const normalized = citation.trim();
       if (!normalized) {
         continue;
@@ -48,7 +54,15 @@ function buildImpactNotes(nodes: Node[], links: Link[]): string[] {
   const notes: string[] = [];
   const rejected = nodes.reduce((count, node) => count + (node.citationAudit?.rejected?.length ?? 0), 0);
   if (rejected > 0) {
-    notes.push(`${rejected} citations were rejected during verification and excluded from publication.`);
+    notes.push(`${rejected} citations require further verification and are excluded from the verified bibliography.`);
+  }
+
+  const recognized = nodes.reduce((count, node) => count + getRecognizedNodeCitations(node).length, 0);
+  const retained = nodes.reduce((count, node) => count + getRetainedNodeCitations(node).length, 0);
+  if (recognized + retained > 0) {
+    notes.push(
+      `${recognized + retained} recognized or researcher-retained sources remain in the citation index but are not part of the verified bibliography.`,
+    );
   }
 
   const lowConfidenceLinks = links.filter((link) => {

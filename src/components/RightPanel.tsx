@@ -100,6 +100,7 @@ interface RightPanelProps {
   enrichedLinkCount: number;
   onGenerateBlindReviewPacket: () => void;
   onGenerateManuscriptPeerReview: (request: ManuscriptPeerReviewRequest) => void;
+  onRetainCitationPendingVerification: (nodeId: string, citation: string, rationale: string) => void;
   onAddPeerReviewComment: (input: PeerReviewCommentInput) => void;
   onUpdatePeerReviewCommentStatus: (commentId: string, status: PeerReviewComment['status']) => void;
   tab: 'detail' | 'framework' | 'summary' | 'lab';
@@ -373,6 +374,7 @@ export function RightPanel({
   enrichedLinkCount,
   onGenerateBlindReviewPacket,
   onGenerateManuscriptPeerReview,
+  onRetainCitationPendingVerification,
   onAddPeerReviewComment,
   onUpdatePeerReviewCommentStatus,
   tab,
@@ -390,6 +392,7 @@ export function RightPanel({
   const [manuscriptReviewLanguage, setManuscriptReviewLanguage] = useState<AppLanguage>(language);
   const [parallaxShift, setParallaxShift] = useState(50);
   const [stanceRationaleDrafts, setStanceRationaleDrafts] = useState<Record<string, string>>({});
+  const [citationAppealDrafts, setCitationAppealDrafts] = useState<Record<string, string>>({});
   const parallaxModel = useMemo(() => (link ? getParallaxModel(link) : null), [link]);
   const stanceMap = useMemo(() => new Map(userStances.map((entry) => [entry.id, entry])), [userStances]);
   const summaryReady = useMemo(() => summaryLoaded && summary.trim().length > 0, [summary, summaryLoaded]);
@@ -844,32 +847,95 @@ export function RightPanel({
 
               <div>
                 <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
-                  {zh ? '引文' : 'Citations'}
+                  {zh ? '引文狀態' : 'Citation Status'}
                 </h4>
-                {node.citations.length > 0 ? (
+                {(node.citationAudit?.verified ?? node.citations).length > 0 ? (
+                  <>
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                      {zh ? '已驗證引文' : 'Verified Citations'}
+                    </p>
                   <ul className="list-inside list-disc text-sm text-slate-700">
-                    {node.citations.map((citation) => (
+                      {(node.citationAudit?.verified ?? node.citations).map((citation) => (
                       <li key={`${node.id}-${citation}`}>{citation}</li>
                     ))}
                   </ul>
+                  </>
                 ) : (
                   <p className="text-sm text-slate-500">
                     {zh ? '此節點暫無已驗證引文。' : 'No verified citations available for this node.'}
                   </p>
                 )}
 
-                {node.citationAudit?.rejected?.length ? (
-                  <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-red-700">
-                      {zh ? '已剔除引文' : 'Rejected Citations'} ({node.citationAudit.rejected.length})
+                {node.citationAudit?.recognized?.length ? (
+                  <div className="mt-2 rounded-lg border border-sky-200 bg-sky-50 p-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-sky-800">
+                      {zh ? '可辨識但待補定位' : 'Recognized, Locator Needed'} ({node.citationAudit.recognized.length})
                     </p>
-                    <ul className="mt-1 list-inside list-disc text-xs text-red-700">
-                      {node.citationAudit.rejected.map((entry) => (
-                        <li key={`${node.id}-rej-${entry.citation}`}>
-                          {entry.citation}: {entry.reason}
+                    <ul className="mt-1 space-y-1 text-xs text-sky-900">
+                      {node.citationAudit.recognized.map((entry) => (
+                        <li key={`${node.id}-recognized-${entry.citation}`}>
+                          <span className="font-semibold">{entry.citation}</span>: {entry.reason}
                         </li>
                       ))}
                     </ul>
+                  </div>
+                ) : null}
+
+                {node.citationAudit?.retained?.length ? (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-800">
+                      {zh ? '研究者保留，待外部核實' : 'Researcher-Retained, Pending Verification'} ({node.citationAudit.retained.length})
+                    </p>
+                    <ul className="mt-1 space-y-1 text-xs text-amber-900">
+                      {node.citationAudit.retained.map((entry) => (
+                        <li key={`${node.id}-retained-${entry.citation}`}>
+                          <span className="font-semibold">{entry.citation}</span>: {entry.rationale}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {node.citationAudit?.rejected?.length ? (
+                  <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-red-700">
+                      {zh ? '待補核引文' : 'Citations Needing Review'} ({node.citationAudit.rejected.length})
+                    </p>
+                    <p className="mt-1 text-xs text-red-700">
+                      {zh
+                        ? '未被系統辨識不等於引文為假。可附上理由保留，之後生成內容會標示為待核而非已驗證。'
+                        : 'An unrecognized citation is not necessarily false. Retain it with a rationale; later output will label it pending verification, not verified.'}
+                    </p>
+                    <div className="mt-2 space-y-3 text-xs text-red-700">
+                      {node.citationAudit.rejected.map((entry) => (
+                        <div key={`${node.id}-rej-${entry.citation}`} className="rounded-md border border-red-100 bg-white/80 p-2">
+                          <p><span className="font-semibold">{entry.citation}</span>: {entry.reason}</p>
+                          <textarea
+                            value={citationAppealDrafts[`${node.id}::${entry.citation}`] ?? ''}
+                            onChange={(event) =>
+                              setCitationAppealDrafts((prev) => ({
+                                ...prev,
+                                [`${node.id}::${entry.citation}`]: event.target.value,
+                              }))
+                            }
+                            rows={2}
+                            className="mt-2 w-full rounded-md border border-red-200 bg-white px-2 py-1.5 text-xs text-slate-700"
+                            placeholder={zh ? '保留理由，例如：HALOT 是標準希伯來文詞典；待補 lemma/卷頁。' : 'Reason to retain, e.g. standard lexicon abbreviation; add lemma/volume/page later.'}
+                          />
+                          <button
+                            onClick={() => {
+                              const key = `${node.id}::${entry.citation}`;
+                              onRetainCitationPendingVerification(node.id, entry.citation, citationAppealDrafts[key] ?? '');
+                              setCitationAppealDrafts((prev) => ({ ...prev, [key]: '' }));
+                            }}
+                            disabled={(citationAppealDrafts[`${node.id}::${entry.citation}`] ?? '').trim().length < 8}
+                            className="mt-2 rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-semibold text-red-800 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {zh ? '保留為待補核來源' : 'Retain Pending Verification'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
               </div>
