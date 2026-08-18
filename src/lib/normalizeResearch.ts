@@ -3,6 +3,9 @@ import type {
   CounterfactualScenarioId,
   Link,
   LinkConfidence,
+  ManuscriptPeerReview,
+  ManuscriptReviewEvidenceStatus,
+  PeerReviewRecommendation,
   Node,
   NodeType,
   SourceType,
@@ -1617,5 +1620,92 @@ export function normalizeSingleLinkPayload(
     scholarlyDebate,
     methodologyTagging,
     intertextualityMetrics,
+  };
+}
+
+function normalizePeerReviewRecommendation(value: unknown): PeerReviewRecommendation {
+  const normalized = asString(value).toLowerCase();
+  if (
+    normalized === 'accept' ||
+    normalized === 'minor-revisions' ||
+    normalized === 'major-revisions' ||
+    normalized === 'reject' ||
+    normalized === 'inconclusive'
+  ) {
+    return normalized;
+  }
+  return 'inconclusive';
+}
+
+function normalizeManuscriptReviewFindings(
+  value: unknown,
+): ManuscriptPeerReview['majorFindings'] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const findings: ManuscriptPeerReview['majorFindings'] = [];
+  for (const item of value) {
+    const entry = asRecord(item);
+    if (!entry) {
+      continue;
+    }
+
+    const location = asString(entry.location);
+    const issue = asString(entry.issue);
+    const whyItMatters = asString(entry.whyItMatters);
+    const revisionAction = asString(entry.revisionAction);
+    if (!location || !issue || !whyItMatters || !revisionAction) {
+      continue;
+    }
+
+    const evidenceStatusRaw = asString(entry.evidenceStatus);
+    const evidenceStatus: ManuscriptReviewEvidenceStatus =
+      evidenceStatusRaw === 'textual-observation'
+        ? 'textual-observation'
+        : 'external-verification-required';
+
+    findings.push({ location, issue, whyItMatters, revisionAction, evidenceStatus });
+    if (findings.length >= 12) {
+      break;
+    }
+  }
+
+  return findings;
+}
+
+export function normalizeManuscriptPeerReviewPayload(
+  raw: unknown,
+  language: 'en' | 'zh-Hant',
+): Omit<
+  ManuscriptPeerReview,
+  'id' | 'title' | 'source' | 'outputLanguage' | 'generatedAt'
+> {
+  const entry = asRecord(raw);
+  const zh = language === 'zh-Hant';
+  const defaultDecision = zh ? '未能根據回應形成可用的編輯決定。' : 'No usable editorial decision was returned.';
+  const defaultSummary = zh
+    ? '模型未能產生可供學術判斷的完整審稿內容。'
+    : 'The model did not return a complete review suitable for academic assessment.';
+  const defaultLimit = zh
+    ? '本審閱未獨立檢索資料庫，引用之存在、準確性與相關性均須由外部來源復核。'
+    : 'This review did not independently query external databases; citation existence, accuracy, and relevance require external verification.';
+  const defaultDeclaration = zh
+    ? '此為基於所提交文本的 AI 輔助審閱，並不構成獨立的文獻、檔案或資料庫核驗。'
+    : 'This is an AI-assisted review of the submitted text and is not an independent literature, archival, or database verification.';
+
+  return {
+    recommendation: normalizePeerReviewRecommendation(entry?.recommendation),
+    editorialDecision: asString(entry?.editorialDecision, defaultDecision),
+    summary: asString(entry?.summary, defaultSummary),
+    strengths: asStringArray(entry?.strengths, 8),
+    majorFindings: normalizeManuscriptReviewFindings(entry?.majorFindings),
+    minorFindings: normalizeManuscriptReviewFindings(entry?.minorFindings),
+    revisionPlan: asStringArray(entry?.revisionPlan, 12),
+    citationVerificationLimits: (() => {
+      const limits = asStringArray(entry?.citationVerificationLimits, 8);
+      return limits.length > 0 ? limits : [defaultLimit];
+    })(),
+    reviewerDeclaration: asString(entry?.reviewerDeclaration, defaultDeclaration),
   };
 }

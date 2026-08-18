@@ -1,6 +1,8 @@
 import type {
+  AppLanguage,
   Link,
   LivingPublication,
+  ManuscriptPeerReview,
   Node,
   PeerReviewComment,
   PeerReviewCommentInput,
@@ -125,7 +127,11 @@ export function computeRevisionDiff(
   };
 }
 
-export function computePeerReviewGate(comments: PeerReviewComment[]): PeerReviewGate {
+export function computePeerReviewGate(
+  comments: PeerReviewComment[],
+  manuscriptReview?: ManuscriptPeerReview,
+  language: AppLanguage = 'en',
+): PeerReviewGate {
   const open = comments.filter((comment) => comment.status === 'open');
   const openMajor = open.filter((comment) => comment.severity === 'major').length;
   const openModerate = open.filter((comment) => comment.severity === 'moderate').length;
@@ -133,22 +139,55 @@ export function computePeerReviewGate(comments: PeerReviewComment[]): PeerReview
   const openQuery = open.filter((comment) => comment.severity === 'query').length;
 
   const blockers: string[] = [];
+  const zh = language === 'zh-Hant';
+  const reviewCompleted = Boolean(manuscriptReview);
+  const recommendation = manuscriptReview?.recommendation;
+  if (!reviewCompleted) {
+    blockers.push(zh ? '尚未完成實質論文審稿。' : 'No substantive manuscript review has been completed.');
+  }
+  if (recommendation === 'major-revisions') {
+    blockers.push(zh ? '稿件須完成重大修訂後才可展示。' : 'The manuscript requires major revisions before presentation.');
+  }
+  if (recommendation === 'reject') {
+    blockers.push(zh ? '稿件獲不建議接受的審稿建議。' : 'The manuscript received a reject recommendation.');
+  }
+  if (recommendation === 'inconclusive') {
+    blockers.push(zh ? '審稿未形成可用的編輯建議。' : 'The review did not produce a usable editorial recommendation.');
+  }
+  if ((manuscriptReview?.majorFindings.length ?? 0) > 0) {
+    blockers.push(
+      zh
+        ? '嚴格審稿仍列出重大修訂要求。'
+        : 'The strict manuscript review still lists major revision requirements.',
+    );
+  }
   if (openMajor > 0) {
-    blockers.push(`${openMajor} major review comments remain open.`);
+    blockers.push(zh ? `仍有 ${openMajor} 項重大審稿意見未處理。` : `${openMajor} major review comments remain open.`);
   }
   if (openModerate > 0) {
-    blockers.push(`${openModerate} moderate review comments remain open.`);
+    blockers.push(zh ? `仍有 ${openModerate} 項中度審稿意見未處理。` : `${openModerate} moderate review comments remain open.`);
   }
   if (openMajor === 0 && openModerate === 0 && openQuery > 0) {
-    blockers.push(`${openQuery} open query comments should be acknowledged before presentation.`);
+    blockers.push(
+      zh
+        ? `仍有 ${openQuery} 項待答覆問題，展示前應予以回應。`
+        : `${openQuery} open query comments should be acknowledged before presentation.`,
+    );
   }
 
   return {
+    reviewCompleted,
+    recommendation,
     openMajor,
     openModerate,
     openMinor,
     openQuery,
-    readyForPresentation: openMajor === 0 && openModerate === 0,
+    readyForPresentation:
+      reviewCompleted &&
+      (recommendation === 'accept' || recommendation === 'minor-revisions') &&
+      (manuscriptReview?.majorFindings.length ?? 0) === 0 &&
+      openMajor === 0 &&
+      openModerate === 0,
     blockers,
   };
 }

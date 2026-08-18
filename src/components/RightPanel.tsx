@@ -8,6 +8,7 @@ import {
   MoveHorizontal,
   RefreshCw,
   ScrollText,
+  ShieldCheck,
 } from 'lucide-react';
 import { type ComponentPropsWithoutRef, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -17,9 +18,12 @@ import type {
   ConceptTopographyReport,
   CounterfactualResult,
   CounterfactualScenarioId,
+  DigitalHermeneuticsReport,
   IntertextualityStatsReport,
   Link,
   LivingPublication,
+  ManuscriptPeerReview,
+  ManuscriptPeerReviewRequest,
   NegativeScriptureIndex,
   Node,
   OutlineProposal,
@@ -77,6 +81,7 @@ interface RightPanelProps {
   onDeleteResearchNote: (noteId: string) => void;
   userStances: UserStance[];
   personalGenealogyReport: PersonalAcademicGenealogyReport;
+  digitalHermeneuticsReport: DigitalHermeneuticsReport;
   onUpsertUserStance: (input: UserStanceInput) => void;
   publication?: LivingPublication;
   publicationLoading?: boolean;
@@ -86,16 +91,19 @@ interface RightPanelProps {
   peerReviewComments: PeerReviewComment[];
   peerReviewGate: PeerReviewGate;
   peerReviewLoading?: boolean;
+  manuscriptPeerReview?: ManuscriptPeerReview;
+  manuscriptPeerReviewLoading?: boolean;
   revisionDiff?: RevisionDiffReport;
   graphNodeCount: number;
   graphLinkCount: number;
   enrichedNodeCount: number;
   enrichedLinkCount: number;
   onGenerateBlindReviewPacket: () => void;
+  onGenerateManuscriptPeerReview: (request: ManuscriptPeerReviewRequest) => void;
   onAddPeerReviewComment: (input: PeerReviewCommentInput) => void;
   onUpdatePeerReviewCommentStatus: (commentId: string, status: PeerReviewComment['status']) => void;
-  tab: 'detail' | 'summary' | 'lab';
-  onTabChange: (tab: 'detail' | 'summary' | 'lab') => void;
+  tab: 'detail' | 'framework' | 'summary' | 'lab';
+  onTabChange: (tab: 'detail' | 'framework' | 'summary' | 'lab') => void;
 }
 
 type ParallaxViewModel = {
@@ -250,6 +258,68 @@ const markdownComponents = {
   ),
 };
 
+const MAX_MANUSCRIPT_REVIEW_CHARS = 50000;
+
+function frameworkStateClasses(state: DigitalHermeneuticsReport['modules'][number]['state']): string {
+  if (state === 'evidenced') {
+    return 'bg-emerald-100 text-emerald-800';
+  }
+  if (state === 'partial') {
+    return 'bg-amber-100 text-amber-800';
+  }
+  return 'bg-slate-100 text-slate-700';
+}
+
+function frameworkStateLabel(
+  state: DigitalHermeneuticsReport['modules'][number]['state'],
+  language: AppLanguage,
+): string {
+  if (language === 'zh-Hant') {
+    if (state === 'evidenced') {
+      return '已有記錄';
+    }
+    if (state === 'partial') {
+      return '部分記錄';
+    }
+    return '尚未證明';
+  }
+  if (state === 'evidenced') {
+    return 'Documented';
+  }
+  if (state === 'partial') {
+    return 'Partial';
+  }
+  return 'Not demonstrated';
+}
+
+function recommendationLabel(
+  recommendation: ManuscriptPeerReview['recommendation'],
+  language: AppLanguage,
+): string {
+  const zh = language === 'zh-Hant';
+  const labels: Record<ManuscriptPeerReview['recommendation'], string> = {
+    accept: zh ? '接受' : 'Accept',
+    'minor-revisions': zh ? '小修後接受' : 'Minor revisions',
+    'major-revisions': zh ? '大修後重審' : 'Major revisions',
+    reject: zh ? '不建議接受' : 'Reject',
+    inconclusive: zh ? '無法判定' : 'Inconclusive',
+  };
+  return labels[recommendation];
+}
+
+function recommendationClasses(recommendation: ManuscriptPeerReview['recommendation']): string {
+  if (recommendation === 'accept') {
+    return 'bg-emerald-100 text-emerald-800';
+  }
+  if (recommendation === 'minor-revisions') {
+    return 'bg-sky-100 text-sky-800';
+  }
+  if (recommendation === 'major-revisions' || recommendation === 'reject') {
+    return 'bg-rose-100 text-rose-800';
+  }
+  return 'bg-slate-100 text-slate-700';
+}
+
 export function RightPanel({
   language,
   node,
@@ -284,6 +354,7 @@ export function RightPanel({
   onDeleteResearchNote,
   userStances,
   personalGenealogyReport,
+  digitalHermeneuticsReport,
   onUpsertUserStance,
   publication,
   publicationLoading = false,
@@ -293,12 +364,15 @@ export function RightPanel({
   peerReviewComments,
   peerReviewGate,
   peerReviewLoading = false,
+  manuscriptPeerReview,
+  manuscriptPeerReviewLoading = false,
   revisionDiff,
   graphNodeCount,
   graphLinkCount,
   enrichedNodeCount,
   enrichedLinkCount,
   onGenerateBlindReviewPacket,
+  onGenerateManuscriptPeerReview,
   onAddPeerReviewComment,
   onUpdatePeerReviewCommentStatus,
   tab,
@@ -311,6 +385,9 @@ export function RightPanel({
   const [reviewTargetId, setReviewTargetId] = useState('publication');
   const [reviewSeverity, setReviewSeverity] = useState<PeerReviewComment['severity']>('moderate');
   const [reviewCommentText, setReviewCommentText] = useState('');
+  const [manuscriptTitle, setManuscriptTitle] = useState('');
+  const [manuscriptText, setManuscriptText] = useState('');
+  const [manuscriptReviewLanguage, setManuscriptReviewLanguage] = useState<AppLanguage>(language);
   const [parallaxShift, setParallaxShift] = useState(50);
   const [stanceRationaleDrafts, setStanceRationaleDrafts] = useState<Record<string, string>>({});
   const parallaxModel = useMemo(() => (link ? getParallaxModel(link) : null), [link]);
@@ -320,6 +397,7 @@ export function RightPanel({
     Boolean(publication) &&
     publicationSyncStatus.status !== 'stale' &&
     peerReviewGate.readyForPresentation;
+  const manuscriptTooLong = manuscriptText.length > MAX_MANUSCRIPT_REVIEW_CHARS;
   const activeNoteTarget = node
     ? `node:${node.id}`
     : link
@@ -370,6 +448,10 @@ export function RightPanel({
     setParallaxShift(50);
   }, [link?.source, link?.target, link?.type]);
 
+  useEffect(() => {
+    setManuscriptReviewLanguage(language);
+  }, [language]);
+
   const handleExportPublication = () => {
     if (!publication) {
       return;
@@ -396,6 +478,30 @@ export function RightPanel({
     setReviewCommentText('');
   };
 
+  const submitManuscriptPeerReview = () => {
+    if (!manuscriptText.trim() || manuscriptTooLong) {
+      return;
+    }
+    onGenerateManuscriptPeerReview({
+      title: manuscriptTitle,
+      manuscript: manuscriptText,
+      source: 'pasted-manuscript',
+      outputLanguage: manuscriptReviewLanguage,
+    });
+  };
+
+  const reviewLivingPublication = () => {
+    if (!publication) {
+      return;
+    }
+    onGenerateManuscriptPeerReview({
+      title: publication.title,
+      manuscript: publication.markdown,
+      source: 'living-publication',
+      outputLanguage: manuscriptReviewLanguage,
+    });
+  };
+
   return (
     <aside className="w-full border-t border-amber-200/80 bg-parchment/95 p-4 xl:h-screen xl:w-[620px] xl:border-l xl:border-t-0 2xl:w-[700px]">
       <div className="mb-3 flex items-center justify-between">
@@ -405,7 +511,7 @@ export function RightPanel({
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : null}
         </h2>
-        <div className="rounded-xl border border-amber-200 bg-white/70 p-1">
+        <div className="flex flex-wrap gap-1 rounded-xl border border-amber-200 bg-white/70 p-1">
           <button
             onClick={() => onTabChange('detail')}
             className={cn(
@@ -415,6 +521,17 @@ export function RightPanel({
           >
             <span className="inline-flex items-center gap-1.5">
               <LibraryBig className="h-3.5 w-3.5" /> {zh ? '詳情' : 'Detail'}
+            </span>
+          </button>
+          <button
+            onClick={() => onTabChange('framework')}
+            className={cn(
+              'rounded-lg px-3 py-1.5 text-xs font-semibold',
+              tab === 'framework' ? 'bg-deepSea text-white' : 'text-slate-600',
+            )}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5" /> {zh ? '框架' : 'Framework'}
             </span>
           </button>
           <button
@@ -1082,6 +1199,147 @@ export function RightPanel({
             </p>
           ) : null}
         </div>
+      ) : tab === 'framework' ? (
+        <div className="h-[48vh] space-y-4 overflow-y-auto rounded-2xl border border-amber-200 bg-white/80 p-4 xl:h-[calc(100vh-110px)]">
+          <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-olive">
+                  {zh ? '數位詮釋學工作台' : 'Digital Hermeneutics Workbench'}
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-ink">{digitalHermeneuticsReport.productName}</h3>
+              </div>
+              <span
+                className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700"
+              >
+                {digitalHermeneuticsReport.assessmentLabel}
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-slate-700">{digitalHermeneuticsReport.summary}</p>
+            <p className="mt-2 rounded-md border border-amber-100 bg-white/80 p-2 text-xs leading-5 text-slate-600">
+              {digitalHermeneuticsReport.assessmentNotice}
+            </p>
+            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+              <div className="rounded-md border border-amber-100 bg-white p-2">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                  {zh ? '判讀方式' : 'Interpretation'}
+                </p>
+                <p className="text-sm font-semibold text-slate-900">{zh ? '非品質評分' : 'Not a quality score'}</p>
+              </div>
+              <div className="rounded-md border border-amber-100 bg-white p-2">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                  {zh ? '已有記錄模組' : 'Documented Modules'}
+                </p>
+                <p className="text-lg font-semibold text-slate-900">
+                  {
+                    digitalHermeneuticsReport.modules.filter((entry) => entry.state === 'evidenced')
+                      .length
+                  }
+                  /{digitalHermeneuticsReport.modules.length}
+                </p>
+              </div>
+              <div className="rounded-md border border-amber-100 bg-white p-2">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                  {zh ? '評估時間' : 'Assessed'}
+                </p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {formatUiDate(digitalHermeneuticsReport.generatedAt, language)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
+                {zh ? '模組覆蓋' : 'Framework Coverage'}
+              </h4>
+              <div className="space-y-2">
+                {digitalHermeneuticsReport.modules.map((module) => (
+                  <div key={module.id} className="rounded-lg border border-amber-100 bg-white p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{module.label}</p>
+                        <p className="text-xs text-slate-600">{module.summary}</p>
+                      </div>
+                      <div className="text-right">
+                        <span
+                          className={cn(
+                            'inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                            frameworkStateClasses(module.state),
+                          )}
+                        >
+                          {frameworkStateLabel(module.state, language)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {module.metrics.map((metric) => (
+                        <span
+                          key={`${module.id}-${metric.label}`}
+                          className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-slate-700"
+                        >
+                          {metric.label}: {metric.value}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-700">
+                      <span className="font-semibold text-slate-900">{zh ? '下一步：' : 'Next step:'}</span>{' '}
+                      {module.nextStep}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      <span className="font-semibold text-slate-700">{zh ? '限制：' : 'Limitation:'}</span>{' '}
+                      {module.limitation}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
+                  {zh ? '證據缺口' : 'Evidence Gaps'}
+                </h4>
+                {digitalHermeneuticsReport.evidenceGaps.length > 0 ? (
+                  <ul className="list-inside list-disc space-y-1 text-xs text-slate-700">
+                    {digitalHermeneuticsReport.evidenceGaps.map((entry) => (
+                      <li key={`framework-blocker-${entry}`}>{entry}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-emerald-700">
+                    {zh
+                      ? '目前未偵測到額外缺口；此結果仍不是品質、可發表性或同行評審認證。'
+                      : 'No additional gap was detected; this remains neither a quality, publishability, nor peer-review certification.'}
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
+                  {zh ? '建議後續' : 'Recommended Next Actions'}
+                </h4>
+                <ol className="list-inside list-decimal space-y-1 text-xs text-slate-700">
+                  {digitalHermeneuticsReport.nextActions.map((entry) => (
+                    <li key={`framework-action-${entry}`}>{entry}</li>
+                  ))}
+                </ol>
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-olive">
+                  {zh ? '對框架頁的判斷' : 'Framework Verdict'}
+                </h4>
+                <p className="text-sm text-slate-700">
+                  {zh
+                    ? '本頁列示已在目前工作階段中可觀察到的功能記錄，並同時揭示其限制。它用於安排後續研究與產品工作，不用於宣稱稿件或系統已達學術品質門檻。'
+                    : 'This page records observable capabilities and their limits in the current session. It helps prioritize research and product work; it does not claim that a manuscript or system meets an academic-quality threshold.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : tab === 'summary' ? (
         <div className="h-[48vh] overflow-y-auto rounded-2xl border border-amber-200 bg-white/80 p-4 xl:h-[calc(100vh-110px)]">
           <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
@@ -1532,6 +1790,171 @@ export function RightPanel({
               )}
             </div>
           )}
+
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-olive">
+                  {zh ? '嚴格論文審稿' : 'Strict Manuscript Review'}
+                </h4>
+                <p className="mt-1 text-xs text-slate-600">
+                  {zh
+                    ? '按期刊外審標準檢視論證、證據、方法、文獻處理與中文學術表述；不為討好作者而淡化重大問題。'
+                    : 'Reviews argument, evidence, method, scholarship, and academic prose without softening material defects to please the author.'}
+                </p>
+              </div>
+              <select
+                value={manuscriptReviewLanguage}
+                onChange={(event) => setManuscriptReviewLanguage(event.target.value as AppLanguage)}
+                className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-slate-700"
+                aria-label={zh ? '審稿語言' : 'Review language'}
+              >
+                <option value="zh-Hant">繁體中文</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+
+            <input
+              value={manuscriptTitle}
+              onChange={(event) => setManuscriptTitle(event.target.value)}
+              className="mt-3 w-full rounded-md border border-amber-200 bg-white px-2 py-1.5 text-xs text-slate-700"
+              placeholder={zh ? '論文題目（可留空）' : 'Manuscript title (optional)'}
+            />
+            <textarea
+              value={manuscriptText}
+              onChange={(event) => setManuscriptText(event.target.value)}
+              rows={8}
+              className="mt-2 w-full rounded-md border border-amber-200 bg-white px-2 py-1.5 text-xs leading-6 text-slate-700"
+              placeholder={zh ? '貼上待審閱的中文學術論文、章節或摘要。系統只會評估所提供的文本，無法自行核實外部文獻。' : 'Paste a manuscript, chapter, or abstract. The review assesses only the supplied text and cannot independently verify external literature.'}
+            />
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+              <span>
+                {zh ? '字元數' : 'Characters'}: {manuscriptText.length}/{MAX_MANUSCRIPT_REVIEW_CHARS}
+              </span>
+              {manuscriptTooLong ? (
+                <span className="font-semibold text-rose-700">
+                  {zh ? '稿件過長，請按章節分拆審閱。' : 'Manuscript is too long; review it by section.'}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={submitManuscriptPeerReview}
+                disabled={manuscriptPeerReviewLoading || !manuscriptText.trim() || manuscriptTooLong}
+                className="inline-flex items-center gap-1 rounded-md bg-deepSea px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#18304f] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {manuscriptPeerReviewLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                {zh ? '執行嚴格審稿' : 'Run Strict Review'}
+              </button>
+              {publication ? (
+                <button
+                  onClick={reviewLivingPublication}
+                  disabled={manuscriptPeerReviewLoading}
+                  className="rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {zh ? '審閱目前動態出版稿' : 'Review Current Publication'}
+                </button>
+              ) : null}
+            </div>
+
+            {manuscriptPeerReview ? (
+              <div className="mt-4 space-y-3 rounded-lg border border-amber-100 bg-white p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{manuscriptPeerReview.title}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {manuscriptPeerReview.source === 'pasted-manuscript'
+                        ? (zh ? '貼上稿件' : 'Pasted manuscript')
+                        : (zh ? '目前動態出版稿' : 'Current living publication')}
+                      {' • '}
+                      {formatUiDate(manuscriptPeerReview.generatedAt, language)}
+                    </p>
+                  </div>
+                  <span className={cn('rounded-full px-2 py-1 text-[11px] font-semibold', recommendationClasses(manuscriptPeerReview.recommendation))}>
+                    {recommendationLabel(manuscriptPeerReview.recommendation, language)}
+                  </span>
+                </div>
+
+                <div className="rounded-md border border-amber-100 bg-amber-50/40 p-2">
+                  <p className="text-xs font-semibold text-slate-900">{manuscriptPeerReview.editorialDecision}</p>
+                  <p className="mt-1 text-xs leading-6 text-slate-700">{manuscriptPeerReview.summary}</p>
+                </div>
+
+                {manuscriptPeerReview.strengths.length > 0 ? (
+                  <div>
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                      {zh ? '已證實的優點' : 'Demonstrated Strengths'}
+                    </p>
+                    <ul className="list-inside list-disc space-y-1 text-xs text-slate-700">
+                      {manuscriptPeerReview.strengths.map((entry) => <li key={entry}>{entry}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-rose-700">
+                    {zh ? '重大修訂要求' : 'Major Revision Requirements'} ({manuscriptPeerReview.majorFindings.length})
+                  </p>
+                  {manuscriptPeerReview.majorFindings.length > 0 ? (
+                    <div className="space-y-2">
+                      {manuscriptPeerReview.majorFindings.map((finding, index) => (
+                        <div key={`major-${finding.location}-${index}`} className="rounded-md border border-rose-100 bg-rose-50/40 p-2 text-xs text-slate-700">
+                          <p className="font-semibold text-rose-900">{finding.location}: {finding.issue}</p>
+                          <p className="mt-1"><span className="font-semibold">{zh ? '為何重要：' : 'Why it matters: '}</span>{finding.whyItMatters}</p>
+                          <p className="mt-1"><span className="font-semibold">{zh ? '必須修訂：' : 'Required revision: '}</span>{finding.revisionAction}</p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {finding.evidenceStatus === 'textual-observation'
+                              ? (zh ? '依據：所提交文本內的觀察' : 'Basis: observation from submitted text')
+                              : (zh ? '依據：需要外部核實' : 'Basis: external verification required')}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">{zh ? '未列出重大問題。這不等同於稿件已通過外部審核。' : 'No major issue was listed. This is not external validation of the manuscript.'}</p>
+                  )}
+                </div>
+
+                {manuscriptPeerReview.minorFindings.length > 0 ? (
+                  <div>
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800">
+                      {zh ? '其他修訂建議' : 'Additional Revisions'} ({manuscriptPeerReview.minorFindings.length})
+                    </p>
+                    <div className="space-y-2">
+                      {manuscriptPeerReview.minorFindings.map((finding, index) => (
+                        <div key={`minor-${finding.location}-${index}`} className="rounded-md border border-amber-100 bg-amber-50/40 p-2 text-xs text-slate-700">
+                          <p className="font-semibold text-slate-900">{finding.location}: {finding.issue}</p>
+                          <p className="mt-1"><span className="font-semibold">{zh ? '修訂：' : 'Revision: '}</span>{finding.revisionAction}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                    {zh ? '修訂次序' : 'Revision Sequence'}
+                  </p>
+                  {manuscriptPeerReview.revisionPlan.length > 0 ? (
+                    <ol className="list-inside list-decimal space-y-1 text-xs text-slate-700">
+                      {manuscriptPeerReview.revisionPlan.map((entry) => <li key={entry}>{entry}</li>)}
+                    </ol>
+                  ) : (
+                    <p className="text-xs text-slate-500">{zh ? '模型未提供可用的修訂次序。' : 'The model did not return a usable revision sequence.'}</p>
+                  )}
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
+                  <p className="font-semibold text-slate-800">{zh ? '核實限制' : 'Verification Limits'}</p>
+                  <ul className="mt-1 list-inside list-disc space-y-1">
+                    {manuscriptPeerReview.citationVerificationLimits.map((entry) => <li key={entry}>{entry}</li>)}
+                  </ul>
+                  <p className="mt-2">{manuscriptPeerReview.reviewerDeclaration}</p>
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
             <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-olive">

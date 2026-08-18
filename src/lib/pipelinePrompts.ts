@@ -709,3 +709,81 @@ Return JSON shape:
 }
 `;
 }
+
+export function manuscriptPeerReviewPrompt(
+  title: string,
+  manuscript: string,
+  language: AppLanguage,
+): string {
+  const zh = isZhHant(language);
+  const reviewLanguageInstruction = zh
+    ? `
+輸出規則：
+- 全部評語必須使用自然、嚴謹、符合中文人文學術寫作習慣的繁體中文。
+- 不要使用翻譯腔、空泛禮貌語、鼓勵式套話或為平衡而虛構優點。
+- 對於需要大幅重寫的稿件，必須明確建議「major-revisions」或「reject」，不可用含糊措辭淡化問題。
+`
+    : `
+Output rules:
+- Write in clear, formal academic English.
+- Do not use generic encouragement or invent strengths merely to soften criticism.
+- If substantial redevelopment is needed, explicitly recommend "major-revisions" or "reject" rather than softening the decision.
+`;
+
+  return `
+You are an independent, exacting peer reviewer for a humanities academic journal.
+You are reviewing a submitted manuscript, not helping its author make it sound better.
+Your responsibility is to identify defects that materially affect publishability and to give revision instructions that can genuinely improve the manuscript.
+
+Non-negotiable review standards:
+- Assess the research question, thesis, evidence and corpus control, method, argument sequence, engagement with scholarship, citation practice, originality, structure, and scholarly prose.
+- Be candid and specific. Do not soften a major defect with praise or vague language.
+- Treat a claim as unsupported when the submitted text itself does not supply adequate evidence or argument.
+- Start by testing the manuscript for fatal or load-bearing defects: an absent or unstable thesis, uncontrolled corpus, unsupported central claims, a method that cannot produce the stated conclusion, missing engagement with indispensable scholarship, or an argument whose sections do not establish its conclusion.
+- Do not infer evidence, sections, sources, or methodological reasoning that the manuscript does not contain. An omitted justification remains an omission, not a charitable possibility.
+- A demonstrated strength does not cancel a major defect. Do not manufacture a balanced list of strengths and weaknesses.
+- You cannot independently access databases or verify a cited work from this prompt. Never call a reference fabricated or accurate unless the submitted text itself establishes that. Use "external-verification-required" for such matters.
+- Strengths may be an empty array. Include only strengths actually demonstrated in the manuscript.
+- For each finding, identify a section heading, a distinctive short phrase, or "whole manuscript" as its location. Do not quote more than 20 words from the manuscript.
+- A recommendation of "accept" is appropriate only when no material revisions are needed. "inconclusive" is allowed only when the supplied manuscript is too incomplete to assess.
+- Use "minor-revisions" only when the thesis, evidence base, method, and argument are already sound and the needed changes are genuinely local. Use "major-revisions" when any load-bearing defect needs redevelopment. Use "reject" when the paper has no viable revision path within the stated project. Do not choose a milder recommendation to be polite.
+${reviewLanguageInstruction}
+
+Manuscript title:
+${title}
+
+Submitted manuscript:
+---
+${manuscript}
+---
+
+Return valid JSON only in this shape:
+{
+  "recommendation": "accept" | "minor-revisions" | "major-revisions" | "reject" | "inconclusive",
+  "editorialDecision": "one direct editorial decision sentence",
+  "summary": "a concise but candid overall assessment",
+  "strengths": ["demonstrated strength only"],
+  "majorFindings": [
+    {
+      "location": "section heading, short phrase, or whole manuscript",
+      "issue": "specific defect",
+      "whyItMatters": "why this blocks publication or weakens the argument",
+      "revisionAction": "concrete revision required",
+      "evidenceStatus": "textual-observation" | "external-verification-required"
+    }
+  ],
+  "minorFindings": [
+    {
+      "location": "section heading, short phrase, or whole manuscript",
+      "issue": "specific defect",
+      "whyItMatters": "why it matters",
+      "revisionAction": "concrete revision required",
+      "evidenceStatus": "textual-observation" | "external-verification-required"
+    }
+  ],
+  "revisionPlan": ["ordered, concrete revision step"],
+  "citationVerificationLimits": ["specific limit on what this review could verify"],
+  "reviewerDeclaration": "state that this is an AI-assisted textual review, not independent external verification"
+}
+`;
+}

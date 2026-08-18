@@ -3,6 +3,8 @@ import type {
   CounterfactualResult,
   CounterfactualScenarioId,
   Link,
+  ManuscriptPeerReview,
+  ManuscriptPeerReviewRequest,
   Node,
   PhaseKey,
   ResearchMethodologyProfile,
@@ -14,6 +16,7 @@ import { isZhHant } from './i18n';
 import { inferChronologyFromNode } from './chronology';
 import {
   normalizeCounterfactualPayload,
+  normalizeManuscriptPeerReviewPayload,
   normalizePublicationPayload,
   normalizeSingleLinkPayload,
   normalizeSingleNodePayload,
@@ -24,6 +27,7 @@ import {
 import {
   counterfactualPrompt,
   linkDebatePrompt,
+  manuscriptPeerReviewPrompt,
   nodeEnrichmentPrompt,
   phase1PromptWithContext,
   publicationMarkdownPrompt,
@@ -39,6 +43,18 @@ interface Logger {
 
 function linkId(link: Pick<Link, 'source' | 'target' | 'type'>): string {
   return `${link.source}::${link.target}::${link.type}`;
+}
+
+const MAX_MANUSCRIPT_REVIEW_CHARS = 50000;
+
+function manuscriptReviewId(title: string, manuscript: string, generatedAt: string): string {
+  let hash = 2166136261;
+  const seed = `${title}\n${manuscript.length}\n${generatedAt}`;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `manuscript-review-${(hash >>> 0).toString(16)}`;
 }
 
 function collectVerifiedCitations(graph: { nodes: Node[]; links: Link[] }): string[] {
@@ -598,5 +614,72 @@ export async function verifyResearchOnDemand(
     return { verification, correctedResult };
   } catch (error) {
     return withLoggedFailure(error, 'phase5-verification', log);
+  }
+}
+
+export async function generateManuscriptPeerReviewOnDemand(
+  request: ManuscriptPeerReviewRequest,
+  log: Logger,
+): Promise<ManuscriptPeerReview> {
+  const title = request.title.trim() || (request.outputLanguage === 'zh-Hant' ? '未命名稿件' : 'Untitled manuscript');
+  const manuscript = request.manuscript.trim();
+
+  if (!manuscript) {
+    throw new Error(
+      request.outputLanguage === 'zh-Hant'
+        ? '請先貼上待審閱的稿件內容。'
+        : 'Paste manuscript text before starting peer review.',
+    );
+  }
+
+  if (manuscript.length > MAX_MANUSCRIPT_REVIEW_CHARS) {
+    throw new Error(
+      request.outputLanguage === 'zh-Hant'
+        ? '稿件超出單次審閱長度上限。請按章節分拆後再審閱，避免模型略讀或截斷。'
+        : 'The manuscript exceeds the single-review length limit. Review it by section to avoid truncation or shallow assessment.',
+    );
+  }
+
+  try {
+    log(
+      'phase10-peer-review',
+      'running',
+      request.outputLanguage === 'zh-Hant'
+        ? '正在以嚴格中文學術審稿標準檢視稿件…'
+        : 'Reviewing manuscript with a strict academic peer-review standard...',
+    );
+    const raw = await generateJson<unknown>(
+      manuscriptPeerReviewPrompt(title, manuscript, request.outputLanguage),
+      (attempt, waitMs) => {
+        log(
+          'phase10-peer-review',
+          'running',
+          request.outputLanguage === 'zh-Hant'
+            ? `遇到速率限制；將於 ${Math.round(waitMs / 1000)} 秒後進行第 ${attempt} 次重試。`
+            : `Rate limit detected. Retry ${attempt} in ${Math.round(waitMs / 1000)}s...`,
+        );
+      },
+    );
+
+    const generatedAt = new Date().toISOString();
+    const normalized = normalizeManuscriptPeerReviewPayload(raw, request.outputLanguage);
+    const review: ManuscriptPeerReview = {
+      id: manuscriptReviewId(title, manuscript, generatedAt),
+      title,
+      source: request.source,
+      outputLanguage: request.outputLanguage,
+      generatedAt,
+      ...normalized,
+    };
+    log(
+      'phase10-peer-review',
+      'success',
+      request.outputLanguage === 'zh-Hant'
+        ? `嚴格審稿完成：${review.recommendation}。`
+        : `Strict peer review complete: ${review.recommendation}.`,
+    );
+    return review;
+  } catch (error) {
+    return withLoggedFailure(error, 'phase10-peer-review', log);
   }
 }

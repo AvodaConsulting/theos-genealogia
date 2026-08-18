@@ -11,6 +11,7 @@ import {
   enrichNodeOnDemand,
   generateCounterfactualOnDemand,
   generateLivingPublicationOnDemand,
+  generateManuscriptPeerReviewOnDemand,
   generateSummaryOnDemand,
   runStructuralPhase,
 } from './lib/pipeline';
@@ -25,6 +26,7 @@ import { buildNotebookPromptContext, fetchNotebookCorpus } from './lib/notebookl
 import { buildOutlineProposal } from './lib/researchWorkflow';
 import { buildNegativeScriptureIndex, applyHeuristicRuptureDiagnosticsToGraph } from './lib/ruptureDiagnostics';
 import { buildScholarlyEcosystemReport } from './lib/scholarlyEcosystem';
+import { buildDigitalHermeneuticsReport } from './lib/digitalHermeneutics';
 import { computeTextualFluidity } from './lib/textualFluidity';
 import { DEFAULT_LANGUAGE, defaultQuery, summaryPlaceholder } from './lib/i18n';
 import {
@@ -39,9 +41,12 @@ import type {
   ConceptTopographyReport,
   CounterfactualResult,
   CounterfactualScenarioId,
+  DigitalHermeneuticsReport,
   IntertextualityStatsReport,
   Link,
   LivingPublication,
+  ManuscriptPeerReview,
+  ManuscriptPeerReviewRequest,
   NegativeScriptureIndex,
   Node,
   NotebookCorpus,
@@ -189,7 +194,7 @@ export default function App() {
   const [query, setQuery] = useState(defaultQuery(DEFAULT_LANGUAGE));
   const [activeQuery, setActiveQuery] = useState(query);
   const [mode, setMode] = useState<'graph' | 'timeline' | 'topography'>('graph');
-  const [rightTab, setRightTab] = useState<'detail' | 'summary' | 'lab'>('detail');
+  const [rightTab, setRightTab] = useState<'detail' | 'framework' | 'summary' | 'lab'>('detail');
 
   const [structureLoading, setStructureLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -220,6 +225,8 @@ export default function App() {
   const [peerReviewPacket, setPeerReviewPacket] = useState<PeerReviewPacket | undefined>();
   const [peerReviewComments, setPeerReviewComments] = useState<PeerReviewComment[]>([]);
   const [peerReviewLoading, setPeerReviewLoading] = useState(false);
+  const [manuscriptPeerReview, setManuscriptPeerReview] = useState<ManuscriptPeerReview | undefined>();
+  const [manuscriptPeerReviewLoading, setManuscriptPeerReviewLoading] = useState(false);
   const [researchNotes, setResearchNotes] = useState<ResearchNote[]>([]);
   const [userStances, setUserStances] = useState<UserStance[]>([]);
   const [notebookRef, setNotebookRef] = useState('');
@@ -308,13 +315,50 @@ export default function App() {
   );
 
   const peerReviewGate: PeerReviewGate = useMemo(
-    () => computePeerReviewGate(peerReviewComments),
-    [peerReviewComments],
+    () => computePeerReviewGate(peerReviewComments, manuscriptPeerReview, language),
+    [language, manuscriptPeerReview, peerReviewComments],
   );
 
   const personalGenealogyReport: PersonalAcademicGenealogyReport = useMemo(
     () => computePersonalAcademicGenealogy(userStances, researchNotes),
     [userStances, researchNotes],
+  );
+  const digitalHermeneuticsReport: DigitalHermeneuticsReport = useMemo(
+    () =>
+      buildDigitalHermeneuticsReport({
+        language,
+        result,
+        summaryLoaded,
+        notebookCorpus,
+        verification,
+        publication,
+        publicationSyncStatus,
+        peerReviewGate,
+        peerReviewPacket,
+        scholarlyEcosystem,
+        researchNotes,
+        personalGenealogyReport,
+        outlineProposal,
+        enrichedNodeCount,
+        enrichedLinkCount,
+      }),
+    [
+      result,
+      language,
+      summaryLoaded,
+      notebookCorpus,
+      verification,
+      publication,
+      publicationSyncStatus,
+      peerReviewGate,
+      peerReviewPacket,
+      scholarlyEcosystem,
+      researchNotes,
+      personalGenealogyReport,
+      outlineProposal,
+      enrichedNodeCount,
+      enrichedLinkCount,
+    ],
   );
   const notebookPromptContext = useMemo(
     () => buildNotebookPromptContext(notebookCorpus),
@@ -354,6 +398,8 @@ export default function App() {
     setPublicationBaselineResult(undefined);
     setPeerReviewPacket(undefined);
     setPeerReviewComments([]);
+    setManuscriptPeerReview(undefined);
+    setManuscriptPeerReviewLoading(false);
     appendLog(
       'phase4-synthesis-summary',
       'running',
@@ -684,6 +730,21 @@ export default function App() {
     }
   }
 
+  async function generateManuscriptPeerReview(request: ManuscriptPeerReviewRequest) {
+    setError(null);
+    setManuscriptPeerReviewLoading(true);
+    try {
+      const review = await generateManuscriptPeerReviewOnDemand(request, appendLog);
+      setManuscriptPeerReview(review);
+    } catch (reviewError) {
+      const message =
+        reviewError instanceof Error ? reviewError.message : 'Failed to generate manuscript peer review.';
+      setError(message);
+    } finally {
+      setManuscriptPeerReviewLoading(false);
+    }
+  }
+
   function addPeerReviewComment(input: PeerReviewCommentInput) {
     if (!input.comment.trim()) {
       return;
@@ -824,6 +885,8 @@ export default function App() {
     setPeerReviewPacket(undefined);
     setPeerReviewComments([]);
     setPeerReviewLoading(false);
+    setManuscriptPeerReview(undefined);
+    setManuscriptPeerReviewLoading(false);
     setResearchNotes([]);
     setUserStances([]);
     setPendingNoteText('');
@@ -898,7 +961,7 @@ export default function App() {
     void ensureLinkEnriched(selectedLink, { force: true });
   };
 
-  const handleTabChange = (tab: 'detail' | 'summary' | 'lab') => {
+  const handleTabChange = (tab: 'detail' | 'framework' | 'summary' | 'lab') => {
     setRightTab(tab);
 
     if (tab === 'summary') {
@@ -906,7 +969,7 @@ export default function App() {
       return;
     }
 
-    if (tab === 'lab') {
+    if (tab === 'lab' || tab === 'framework') {
       return;
     }
 
@@ -1060,6 +1123,7 @@ export default function App() {
           onDeleteResearchNote={deleteResearchNote}
           userStances={userStances}
           personalGenealogyReport={personalGenealogyReport}
+          digitalHermeneuticsReport={digitalHermeneuticsReport}
           onUpsertUserStance={upsertUserStance}
           publication={publication}
           publicationLoading={publicationLoading}
@@ -1069,12 +1133,15 @@ export default function App() {
           peerReviewComments={peerReviewComments}
           peerReviewGate={peerReviewGate}
           peerReviewLoading={peerReviewLoading}
+          manuscriptPeerReview={manuscriptPeerReview}
+          manuscriptPeerReviewLoading={manuscriptPeerReviewLoading}
           revisionDiff={revisionDiff}
           graphNodeCount={result.nodes.length}
           graphLinkCount={result.links.length}
           enrichedNodeCount={enrichedNodeCount}
           enrichedLinkCount={enrichedLinkCount}
           onGenerateBlindReviewPacket={() => void generateBlindReviewPacket()}
+          onGenerateManuscriptPeerReview={(request) => void generateManuscriptPeerReview(request)}
           onAddPeerReviewComment={addPeerReviewComment}
           onUpdatePeerReviewCommentStatus={updatePeerReviewCommentStatus}
           tab={rightTab}

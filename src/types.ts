@@ -66,6 +66,49 @@ export interface LivingPublication {
   impactNotes: string[];
 }
 
+export type ManuscriptReviewSource = 'pasted-manuscript' | 'living-publication';
+export type PeerReviewRecommendation =
+  | 'accept'
+  | 'minor-revisions'
+  | 'major-revisions'
+  | 'reject'
+  | 'inconclusive';
+export type ManuscriptReviewEvidenceStatus =
+  | 'textual-observation'
+  | 'external-verification-required';
+
+export interface ManuscriptReviewFinding {
+  location: string;
+  issue: string;
+  whyItMatters: string;
+  revisionAction: string;
+  evidenceStatus: ManuscriptReviewEvidenceStatus;
+}
+
+export interface ManuscriptPeerReviewRequest {
+  title: string;
+  manuscript: string;
+  source: ManuscriptReviewSource;
+  outputLanguage: AppLanguage;
+}
+
+export interface ManuscriptPeerReview {
+  id: string;
+  title: string;
+  source: ManuscriptReviewSource;
+  outputLanguage: AppLanguage;
+  generatedAt: string;
+  recommendation: PeerReviewRecommendation;
+  editorialDecision: string;
+  summary: string;
+  strengths: string[];
+  majorFindings: ManuscriptReviewFinding[];
+  minorFindings: ManuscriptReviewFinding[];
+  revisionPlan: string[];
+  citationVerificationLimits: string[];
+  reviewerDeclaration: string;
+}
+
 export type PeerReviewTargetType = 'publication' | 'node' | 'link';
 export type PeerReviewSeverity = 'major' | 'moderate' | 'minor' | 'query';
 export type PeerReviewStatus = 'open' | 'addressed';
@@ -224,6 +267,34 @@ export interface PersonalAcademicGenealogyReport {
   faultLines: string[];
 }
 
+export type FrameworkModuleState = 'evidenced' | 'partial' | 'not-demonstrated';
+
+export interface DigitalHermeneuticsMetric {
+  label: string;
+  value: string;
+}
+
+export interface DigitalHermeneuticsModule {
+  id: string;
+  label: string;
+  state: FrameworkModuleState;
+  summary: string;
+  limitation: string;
+  nextStep: string;
+  metrics: DigitalHermeneuticsMetric[];
+}
+
+export interface DigitalHermeneuticsReport {
+  generatedAt: string;
+  productName: string;
+  assessmentLabel: string;
+  assessmentNotice: string;
+  summary: string;
+  modules: DigitalHermeneuticsModule[];
+  evidenceGaps: string[];
+  nextActions: string[];
+}
+
 export type ResearchNoteKind = 'observation' | 'question' | 'argument' | 'todo';
 export type ResearchNoteTargetType = 'global' | 'node' | 'link';
 
@@ -262,6 +333,8 @@ export interface PublicationSyncStatus {
 }
 
 export interface PeerReviewGate {
+  reviewCompleted: boolean;
+  recommendation?: PeerReviewRecommendation;
   openMajor: number;
   openModerate: number;
   openMinor: number;

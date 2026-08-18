@@ -2,6 +2,8 @@
 
 Doctorate-level biblical philology and concept genealogy tracer.
 
+This repository provides a research workbench for corpus ingestion, genealogical tracing, scholarly debate, integrity checks, provenance tracking, living publication, and review workflows. Its framework dashboard maps available capabilities; it is not a scholarly-quality score or publication certification.
+
 ## Setup
 
 1. Install dependencies:
@@ -123,6 +125,20 @@ It also includes:
 - Living Publication now uses a dedicated publication-grade generation pipeline (not summary reuse), with system-locked verified bibliography.
 - Living Publication robustness: if long JSON publication payloads fail parsing, the pipeline auto-retries in plain-Markdown fallback mode.
 - Level 6 peer-review workflow: blind review packet generation, mapped reviewer comments (publication/node/link), and revision diff tracking against packet baseline.
+- Strict manuscript review: paste a Chinese or English paper, or review a Living Publication, to receive a direct editorial recommendation, major and minor findings, and an ordered revision plan. The review distinguishes textual observations from claims requiring external verification.
+- Product layer: a dedicated `Framework` panel that maps the current workspace's documented capabilities, limitations, and next actions without assigning an uncalibrated quality score.
+
+## Digital Hermeneutics Capability Map
+
+The app maps the following product modules. This is a capability inventory, not an assessment of research quality, scholarly validity, or readiness for publication.
+
+- Corpus ingestion: NotebookLM bridge today, with the UI ready for additional corpus connectors such as Zotero.
+- Agentic workflow: structural tracing, node/link enrichment, synthesis, publication, and review in one flow.
+- Debate engine: scholarly debate blocks, contested-link clustering, and personal stance tracking.
+- Integrity gate: citation audit, verification status, intertextuality statistics, publication sync, and peer-review gatekeeping.
+- Knowledge provenance: publication citation index mapped back to graph nodes.
+- Session research workspace: research notes, outline proposal, publication draft, and personal genealogy. These are not durable shared storage unless an external persistence layer is configured.
+- Entropy control: stale-publication detection and reviewer blockers. A presentation-ready signal requires a substantive manuscript review as well as resolved material comments.
 
 ## LLM Provider
 
