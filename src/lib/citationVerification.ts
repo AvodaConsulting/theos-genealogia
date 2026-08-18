@@ -512,7 +512,10 @@ async function verifyWithCrossref(
     return {
       citation,
       verified: false,
-      reason: `Crossref candidates found but similarity too low (score=${bestScore.toFixed(2)}).`,
+      recognized: true,
+      reason:
+        `Crossref found a possible bibliographic match, but the similarity score is below the automatic verification threshold (score=${bestScore.toFixed(2)}). ` +
+        'Retained pending a full bibliographic check; add a stable locator or complete reference before treating it as verified.',
     };
   } catch (error) {
     return {

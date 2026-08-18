@@ -122,6 +122,7 @@ It also includes:
 - Level 3 module: Intertextuality Statistics Engine with permutation p-value testing on selected links
 - Citation integrity guardrail: every node citation is categorized as verified, recognized-but-needing-a-locator, researcher-retained-pending-verification, or needing review. A failed automatic match is not treated as proof that a specialist source is invalid.
 - Citation appeal workflow: researchers can retain a citation with a written rationale. Retained and recognized sources remain visible in later research output under a pending-verification appendix, while verified bibliographies remain limited to verified entries.
+- Crossref candidate matches below the automatic similarity threshold are retained automatically as needing verification; they do not require a manual appeal.
 - Level 5.2 foundation: Living Publication generator with citation-index-to-graph navigation.
 - Living Publication now uses a dedicated publication-grade generation pipeline (not summary reuse), with system-locked verified bibliography.
 - Living Publication robustness: if long JSON publication payloads fail parsing, the pipeline auto-retries in plain-Markdown fallback mode.
